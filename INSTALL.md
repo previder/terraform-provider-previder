@@ -17,7 +17,7 @@ Only the server is deployed, installing Apache or Nginx will be done by SSH comm
 The easy part of TerraForm is the installation of TerraForm itself. The project consists from one executable built in the GoLang language.<br />
 Browse to the download page of TerraForm which is located at https://www.terraform.io/downloads.html<br />
 Download the executable for your OS. The example uses Linux 64-bit. Other OSes could differ, but the mainline should stay the same.<br />
-Extract the executable to the target directory. Latest version available at time of writing this manual is 0.9.4.
+Extract the executable to the target directory. Latest version available at time of writing this manual is 0.11.1.
 
 ```bash
 mkdir -p /opt/terraform
