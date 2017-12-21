@@ -122,8 +122,17 @@ func resourcePreviderVirtualNetworkUpdate(d *schema.ResourceData, meta interface
 		addressPool.Start = d.Get("address_pool").(map[string]interface{})["ip_start"].(string)
 		addressPool.End = d.Get("address_pool").(map[string]interface{})["ip_end"].(string)
 		addressPool.Mask = d.Get("address_pool").(map[string]interface{})["ip_netmask"].(string)
-		addressPool.Gateway = d.Get("address_pool").(map[string]interface{})["ip_gateway"].(string)
-		addressPool.NameServers = append(addressPool.NameServers, d.Get("address_pool").(map[string]interface{})["ip_nameserver1"].(string), d.Get("address_pool").(map[string]interface{})["ip_nameserver2"].(string))
+		if d.Get("address_pool").(map[string]interface{})["ip_gateway"] != nil {
+			addressPool.Gateway = d.Get("address_pool").(map[string]interface{})["ip_gateway"].(string)
+		}
+		if d.Get("address_pool").(map[string]interface{})["ip_nameserver1"] != nil {
+			addressPool.NameServers = append(addressPool.NameServers, d.Get("address_pool").(map[string]interface{})["ip_nameserver1"].(string))
+		}
+
+		if d.Get("address_pool").(map[string]interface{})["ip_nameserver2"] != nil {
+			addressPool.NameServers = append(addressPool.NameServers, d.Get("address_pool").(map[string]interface{})["ip_nameserver2"].(string))
+		}
+
 		update.AddressPool = addressPool
 	}
 
