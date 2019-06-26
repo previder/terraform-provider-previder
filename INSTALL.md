@@ -17,18 +17,18 @@ Only the server is deployed, installing Apache or Nginx will be done by SSH comm
 The easy part of TerraForm is the installation of TerraForm itself. The project consists from one executable built in the GoLang language.<br />
 Browse to the download page of TerraForm which is located at https://www.terraform.io/downloads.html<br />
 Download the executable for your OS. The example uses Linux 64-bit. Other OSes could differ, but the mainline should stay the same.<br />
-Extract the executable to the target directory. Latest version available at time of writing this manual is 0.11.1.
+Extract the executable to the target directory. Latest version available at time of writing this manual is 0.12.3.
 
 ```bash
 mkdir -p /opt/terraform
 cd /opt/terraform
-wget "https://releases.hashicorp.com/terraform/0.11.1/terraform_0.11.1_linux_amd64.zip" -O terraform.zip
+wget "https://releases.hashicorp.com/terraform/0.12.3/terraform_0.12.3_linux_amd64.zip" -O terraform.zip
 unzip terraform.zip
 ./terraform version
 ```
 
 After TerraForm has been downloaded and the version verified. The Provider can be cloned using Git and built.<br />
-Make sure you have set the GOPATH environment variable and at least GoLang 1.9 available. This version is required by TerraForm.<br />
+Make sure you have set the GOPATH environment variable and at least GoLang 1.12.6 available. This version is required by TerraForm.<br />
 
 ```bash
 cd $GOPATH/src

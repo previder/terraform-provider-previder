@@ -23,16 +23,6 @@ The following arguments are supported:
 ```
 resource "previder_virtualnetwork" "testlab-net" {
     name = "testlab-net"
-    address_pool = [
-        { 
-            ip_start = "10.111.0.1" 
-            ip_end = "10.111.0.253"
-            ip_netmask = "255.255.255.0"
-            ip_gateway = "10.111.0.254"
-            ip_nameserver1 = "10.111.0.254"
-            ip_nameserver2 = "10.111.0.254"
-        }
-    ]
 }
 ```
 #### Argument reference
@@ -55,20 +45,24 @@ resource "previder_virtualmachine" "testlab-vm1" {
     name = "testlab-vm1"
     cpucores = 2
     memory = 1024
-    template = "Ubuntu LTS"
-    cluster = "Express"
-    disk = [
-        { size = 10240 }
-    ]
-    network_interface = [
-        { network = "Public WAN" }
-    ]
+    template = "ubuntu1804lts"
+    cluster = "express"
+    disk {
+     size = 10240
+     label = "OS"
+    }
+    network_interface {
+     network = "Public WAN"
+	 primary = true
+	 connected = true
+	 label = "WAN NIC"
+    }
     user_data = <<EOF
 #cloud-config
 
 users:
   - name: ubuntu
-    passwd: <base64 encrypted password>
+    passwd: VGVzdDEyMyEK
 EOF
     connection {
         user = "ubuntu"
@@ -84,16 +78,19 @@ resource "previder_virtualmachine" "testlab-vm1" {
     name = "testlab-vm1"
     cpucores = 2
     memory = 1024
-    template = "Ubuntu LTS"
-    cluster = "Express"
-    disk = [
-        { size = 10240 }
-    ]
-    network_interface = [
-        { network = "Public WAN" }
-    ]
-    depends_on = ["previder_virtualnetwork.www-net"]
-    user_data = <<EOF
+    template = "ubuntu1804lts"
+    cluster = "express"
+    disk {
+     size = 10240
+     label = "OS"
+    }
+    network_interface {
+     network = "Public WAN"
+	 primary = true
+	 connected = true
+	 label = "WAN NIC"
+    }
+	user_data = <<EOF
 #cloud-config
 ssh_authorized_keys:
   - "ssh-rsa <insert public key>"

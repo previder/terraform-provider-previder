@@ -1,15 +1,15 @@
 package provider
 
 import (
-	"fmt"
-	"log"
-	"strings"
-	"time"
-
 	"encoding/json"
+	"fmt"
 	"github.com/hashicorp/terraform/helper/resource"
 	"github.com/hashicorp/terraform/helper/schema"
-	"github.com/previder/previder-go-sdk"
+	"github.com/previder/previder-go-sdk/client"
+	"log"
+	"strconv"
+	"strings"
+	"time"
 )
 
 func resourcePreviderVirtualMachine() *schema.Resource {
@@ -50,11 +50,19 @@ func resourcePreviderVirtualMachine() *schema.Resource {
 					Schema: map[string]*schema.Schema{
 						"id": {
 							Type:     schema.TypeString,
-							Computed: true,
+							Optional: true,
 						},
 						"size": {
 							Type:     schema.TypeInt,
 							Required: true,
+						},
+						"label": {
+							Type:     schema.TypeString,
+							Required: true,
+						},
+						"uuid": {
+							Type:     schema.TypeString,
+							Computed: true,
 						},
 					},
 				},
@@ -67,22 +75,39 @@ func resourcePreviderVirtualMachine() *schema.Resource {
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
 						"id": {
-							Type:     schema.TypeString,
+							Type:     schema.TypeInt,
 							Computed: true,
 						},
 						"network": {
 							Type:     schema.TypeString,
 							Required: true,
 						},
+						"connected": {
+							Type:     schema.TypeBool,
+							Optional: true,
+						},
+						"primary": {
+							Type:     schema.TypeBool,
+							Optional: true,
+						},
 						"ipv4_address": {
 							Type:     schema.TypeList,
 							Elem:     &schema.Schema{Type: schema.TypeString},
+							Optional: true,
 							Computed: true,
 						},
 						"ipv6_address": {
 							Type:     schema.TypeList,
 							Elem:     &schema.Schema{Type: schema.TypeString},
 							Computed: true,
+						},
+						"mac_address": {
+							Type:     schema.TypeString,
+							Computed: true,
+						},
+						"label": {
+							Type:     schema.TypeString,
+							Optional: true,
 						},
 					},
 				},
@@ -126,6 +151,13 @@ func resourcePreviderVirtualMachine() *schema.Resource {
 				Type:     schema.TypeString,
 				Computed: true,
 			},
+			"tags": {
+				Type:     schema.TypeSet,
+				Optional: true,
+				Elem: &schema.Schema{
+					Type: schema.TypeString,
+				},
+			},
 		},
 	}
 }
@@ -150,7 +182,7 @@ func resourcePreviderVirtualMachineCreate(d *schema.ResourceData, meta interface
 		vm.CpuCores = attr.(int)
 	}
 	if attr, ok := d.GetOk("memory"); ok {
-		vm.MemoryMb = attr.(int)
+		vm.Memory = uint64(attr.(int))
 	}
 	if attr, ok := d.GetOk("user_data"); ok {
 		vm.UserData = attr.(string)
@@ -158,56 +190,68 @@ func resourcePreviderVirtualMachineCreate(d *schema.ResourceData, meta interface
 	if attr, ok := d.GetOk("provisioning_type"); ok {
 		vm.ProvisioningType = attr.(string)
 	}
-	if vL, ok := d.GetOk("network_interface"); ok {
-		vm.NetworkInterfaces = make([]client.NetworkInterface, len(vL.([]interface{})))
-		for i, vL := range vL.([]interface{}) {
+	if attr, ok := d.GetOk("template"); ok {
+		vm.Template = attr.(string)
+	}
+	if attr, ok := d.GetOk("cluster"); ok {
+		vm.ComputeCluster = attr.(string)
+	}
+	if attr, ok := d.GetOk("tags"); ok {
+		tfTags := attr.(*schema.Set).List()
+		tags := make([]string, len(tfTags))
+		for i, tag := range tfTags {
+			tags[i] = tag.(string)
+		}
+		vm.Tags = tags
+	}
+
+	if networkInterfaceList, ok := d.GetOk("network_interface"); ok {
+		vm.NetworkInterfaces = make([]client.NetworkInterface, len(networkInterfaceList.([]interface{})))
+		for i, vL := range networkInterfaceList.([]interface{}) {
 			networkInterface := vL.(map[string]interface{})
 			if v, ok := networkInterface["network"].(string); ok && v != "" {
-				network, err := c.VirtualNetwork.Get(v)
-				if err != nil {
-					return err
-				}
-				vm.NetworkInterfaces[i].Network = *network
+				vm.NetworkInterfaces[i].Network = v
+			}
+			if v, ok := networkInterface["connected"].(bool); ok {
+				vm.NetworkInterfaces[i].Connected = v
+			} else {
+				vm.NetworkInterfaces[i].Connected = true
+			}
+
+			if v, ok := networkInterface["label"].(string); ok && v != "" {
+				vm.NetworkInterfaces[i].Label = v
+			}
+
+			if _, ok := networkInterface["primary"].(bool); ok {
+				_ = d.Set("primaryNetworkInterfaceIdx", i)
 			}
 		}
 	} else {
-		network, err := c.VirtualNetwork.Get(defaultNetworkName)
-		if err != nil {
-			return err
-		}
 		var networkInterface client.NetworkInterface
-		networkInterface.Network = *network
+		networkInterface.Network = defaultNetworkName
+		networkInterface.Connected = true
 		vm.NetworkInterfaces = []client.NetworkInterface{networkInterface}
 	}
 
-	if vL, ok := d.GetOk("disk"); ok {
-		vm.VirtualDisks = make([]client.VirtualDisk, len(vL.([]interface{})))
-		for i, vL := range vL.([]interface{}) {
+	if disks, ok := d.GetOk("disk"); ok {
+		vm.Disks = make([]client.Disk, len(disks.([]interface{})))
+		for i, vL := range disks.([]interface{}) {
 			disk := vL.(map[string]interface{})
+
+			if v, ok := disk["id"].(string); ok && len(v) > 0 {
+				vm.Disks[i].Id = new(int)
+				*vm.Disks[i].Id, _ = strconv.Atoi(v)
+			}
+
 			if v, ok := disk["size"].(int); ok && v > 0 {
-				vm.VirtualDisks[i].DiskSizeMb = v
+				vm.Disks[i].Size = uint64(v)
+			}
+
+			if v, ok := disk["label"].(string); ok && len(v) > 0 {
+				vm.Disks[i].Label = v
 			}
 		}
 	}
-
-	if attr, ok := d.GetOk("cluster"); ok {
-		computeCluster, err := c.VirtualMachine.ComputeClusterGet(attr.(string))
-		if err != nil {
-			return err
-		}
-		vm.ComputeCluster = *computeCluster
-	}
-
-	if attr, ok := d.GetOk("template"); ok {
-		template, err := c.VirtualMachine.VirtualMachineTemplateGet(attr.(string))
-		if err != nil {
-			return err
-		}
-		vm.Template = *template
-	}
-
-	vmJson, _ := json.Marshal(vm)
-	log.Printf("[DEBUG] Virtual Server create configuration: %s", string(vmJson))
 
 	task, err := c.VirtualMachine.Create(&vm)
 	if err != nil {
@@ -215,8 +259,8 @@ func resourcePreviderVirtualMachineCreate(d *schema.ResourceData, meta interface
 			"Error while creating VirtualMachine (%s): %s", d.Id(), err)
 	}
 
-	c.Task.WaitForTask(task, 5*time.Minute)
-	d.SetId(task.ConfigurationItem.Id)
+	_, _ = c.Task.WaitFor(task.Id, 5*time.Minute)
+	d.SetId(task.VirtualMachine)
 
 	_, err = WaitForVirtualMachineAttribute(d, "POWEREDON", []string{"NEW", "DEPLOYING"}, "state", meta)
 	if err != nil {
@@ -233,6 +277,9 @@ func resourcePreviderVirtualMachineRead(d *schema.ResourceData, meta interface{}
 	// Retrieve the VirtualMachine properties for updating the state
 	vm, err := c.VirtualMachine.Get(d.Id())
 
+	vmJson, _ := json.Marshal(vm)
+	log.Printf("[DEBUG] Virtual Server read configuration: %s", string(vmJson))
+
 	if err != nil {
 		if err.(*client.ApiError).Code == 404 {
 			d.SetId("")
@@ -241,49 +288,73 @@ func resourcePreviderVirtualMachineRead(d *schema.ResourceData, meta interface{}
 		return fmt.Errorf("invalid VirtualMachine id: %v", err)
 	}
 
-	d.Set("name", vm.Name)
-	d.Set("memory", vm.MemoryMb)
-	d.Set("cpucores", vm.CpuCores)
-	d.Set("template", vm.Template.Name)
-	d.Set("cluster", vm.ComputeCluster.Name)
-	d.Set("state", vm.State)
-	d.Set("termination_protection", vm.TerminationProtection)
-	d.Set("initial_password", vm.InitialPassword)
+	_ = d.Set("name", vm.Name)
+	_ = d.Set("memory", vm.Memory)
+	_ = d.Set("cpucores", vm.CpuCores)
+	_ = d.Set("template", vm.Template)
+	_ = d.Set("cluster", vm.ComputeCluster)
+	_ = d.Set("state", vm.State)
+	_ = d.Set("termination_protection", vm.TerminationProtectionEnabled)
+	_ = d.Set("initial_password", vm.InitialPassword)
 
-	disks := make([]map[string]interface{}, len(vm.VirtualDisks))
-	for i, v := range vm.VirtualDisks {
-		disks[i] = make(map[string]interface{})
-		disks[i]["id"] = v.Id
-		disks[i]["size"] = v.DiskSizeMb
+	var primaryNetworkInterfaceIdx = 0
+	if idx, ok := d.GetOk("primaryNetworkInterfaceIdx"); ok {
+		primaryNetworkInterfaceIdx = idx.(int)
 	}
-	d.Set("disk", disks)
+
+	disks := make([]map[string]interface{}, len(vm.Disks))
+
+	for vmIdx, vmDisk := range vm.Disks {
+		if tfDisks, ok := d.GetOk("disk"); ok {
+			for _, tfDisk := range tfDisks.([]interface{}) {
+				disk := tfDisk.(map[string]interface{})
+				if disk["uuid"] == vmDisk.Uuid || disk["label"] == vmDisk.Label {
+					disks[vmIdx] = make(map[string]interface{})
+					disks[vmIdx]["id"] = strconv.Itoa(*vmDisk.Id)
+					disks[vmIdx]["size"] = vmDisk.Size
+					disks[vmIdx]["uuid"] = vmDisk.Uuid
+					disks[vmIdx]["label"] = vmDisk.Label
+				}
+			}
+		}
+	}
+	err = d.Set("disk", disks)
 
 	networkInterfaces := make([]map[string]interface{}, len(vm.NetworkInterfaces))
 	for i, v := range vm.NetworkInterfaces {
 		networkInterfaces[i] = make(map[string]interface{})
-		networkInterfaces[i]["id"] = v.Id
-		networkInterfaces[i]["network"] = v.Network.Name
-		ipv4_address := make([]string, 0)
-		ipv6_address := make([]string, 0)
-		for _, a := range v.AddressAssignments {
-			if a.Type == "IPV4" {
-				ipv4_address = append(ipv4_address, a.Address)
-			} else if a.Type == "IPV6" {
-				ipv6_address = append(ipv6_address, a.Address)
+		networkInterfaces[i]["id"] = i
+		networkInterfaces[i]["network"] = v.Network
+		networkInterfaces[i]["mac_address"] = v.MacAddress
+		networkInterfaces[i]["label"] = v.Label
+		networkInterfaces[i]["connected"] = v.Connected
+
+		ipv4Address := make([]string, 0)
+		ipv6Address := make([]string, 0)
+		for _, a := range v.AssignedAddresses {
+			if strings.Contains(a, ":") {
+				ipv6Address = append(ipv6Address, a)
+			} else {
+				ipv4Address = append(ipv4Address, a)
 			}
 		}
-		networkInterfaces[i]["ipv4_address"] = ipv4_address
-		networkInterfaces[i]["ipv6_address"] = ipv6_address
-	}
-	d.Set("network_interface", networkInterfaces)
 
-	if vm.NetworkInterfaces[0].FirstIPv4AddressAssignment.Address != "" {
-		d.Set("ipv4_address", vm.NetworkInterfaces[0].FirstIPv4AddressAssignment.Address)
-		d.SetConnInfo(map[string]string{
-			"type": "ssh",
-			"host": vm.NetworkInterfaces[0].FirstIPv4AddressAssignment.Address,
-		})
+		networkInterfaces[i]["ipv4_address"] = ipv4Address
+		networkInterfaces[i]["ipv6_address"] = ipv6Address
+
+		if primaryNetworkInterfaceIdx == i {
+			networkInterfaces[i]["primary"] = true
+
+			d.Set("ipv4_address", networkInterfaces[0]["ipv4_address"].([]string)[0])
+			d.SetConnInfo(map[string]string{
+				"type": "ssh",
+				"host": networkInterfaces[0]["ipv4_address"].([]string)[0],
+			})
+		}
 	}
+
+	err = d.Set("network_interface", networkInterfaces)
+	log.Printf("Err: %s", err)
 
 	return nil
 }
@@ -291,138 +362,121 @@ func resourcePreviderVirtualMachineRead(d *schema.ResourceData, meta interface{}
 func resourcePreviderVirtualMachineUpdate(d *schema.ResourceData, meta interface{}) error {
 	c := meta.(*client.BaseClient)
 
-	var machineHasShutdown bool = false
+	var machineHasShutdown = false
 
 	vm, err := c.VirtualMachine.Get(d.Id())
 	if err != nil {
 		return err
 	}
 
+	if d.HasChange("cluster") {
+		vm.ComputeCluster = d.Get("cluster").(string)
+	}
+
 	if d.HasChange("cpucores") || d.HasChange("memory") || d.HasChange("name") {
-		gracefullyShutdownVirtualMachine(d, meta)
+		_ = gracefullyShutdownVirtualMachine(d, meta)
 		machineHasShutdown = true
 
-		// V1 compatibility
-		if attr, ok := d.GetOk("cluster"); ok {
-			d.Set("cluster", attr)
-		} else {
-			d.Set("cluster", vm.ComputeCluster.Name)
-		}
-		computeCluster, err := c.VirtualMachine.ComputeClusterGet(d.Get("cluster").(string))
-
-		if err != nil {
-			return err
-		}
-
-		var update client.VirtualMachineUpdate
-		update.ComputeCluster = *computeCluster
-		update.Hostname = vm.Hostname
-
 		// End V1 compatibility
+		vm.CpuCores = d.Get("cpucores").(int)
+		vm.Memory = d.Get("memory").(uint64)
+		vm.Name = d.Get("name").(string)
 
-		update.CpuCores = d.Get("cpucores").(int)
-		update.MemoryMb = d.Get("memory").(int)
-		update.Name = d.Get("name").(string)
-
-		task, err := c.VirtualMachine.Update(d.Id(), &update)
+		task, err := c.VirtualMachine.Update(d.Id(), vm)
 
 		if err != nil {
 			return fmt.Errorf(
 				"Error waiting for update of cpuCores or memory of VirtualMachine (%s): %s", d.Id(), err)
 		}
-		c.Task.WaitForTask(task, 5*time.Minute)
+
+		_, _ = c.Task.WaitFor(task.Id, 5*time.Minute)
 
 	}
 
 	if d.HasChange("disk") {
-		oldDisks, newDisks := d.GetChange("disk")
+		_, newDisks := d.GetChange("disk")
+		// Added and changed disks
+		for _, disk := range newDisks.([]interface{}) {
+			found := false
+			tfDisk := disk.(map[string]interface{})
+			for _, vmDisk := range vm.Disks {
+				if tfDisk["uuid"] == vmDisk.Uuid {
+					vm.Disks[*vmDisk.Id].Size = uint64(tfDisk["size"].(int))
+					vm.Disks[*vmDisk.Id].Label = tfDisk["label"].(string)
+					found = true
+				}
+			}
+
+			// If the disk was not found in API data, then its a new disk.
+			if !found {
+				d := client.Disk{}
+				d.Size = uint64(tfDisk["size"].(int))
+				d.Label = tfDisk["label"].(string)
+				vm.Disks = append(vm.Disks, d)
+			}
+		}
 
 		// Removed disks
-		for _, oldDiskRaw := range oldDisks.([]interface{}) {
-			oldDisk := oldDiskRaw.(map[string]interface{})
+		for _, vmDisk := range vm.Disks {
 			found := false
-			for _, newDiskRaw := range newDisks.([]interface{}) {
-				newDisk := newDiskRaw.(map[string]interface{})
-				if newDisk["id"] == oldDisk["id"] {
+			for _, disk := range newDisks.([]interface{}) {
+				tfDisk := disk.(map[string]interface{})
+				if vmDisk.Uuid == tfDisk["uuid"] {
 					found = true
 				}
+
 			}
+
 			if !found {
-				c.VirtualMachine.DeleteDisk(d.Id(), oldDisk["id"].(string))
+				i := *vmDisk.Id
+				vm.Disks = append(vm.Disks[:i], vm.Disks[i+1:]...)
 			}
 		}
-
-		// Added disks
-		for _, newDiskRaw := range newDisks.([]interface{}) {
-			newDisk := newDiskRaw.(map[string]interface{})
-			found := false
-			for _, oldDiskRaw := range oldDisks.([]interface{}) {
-				oldDisk := oldDiskRaw.(map[string]interface{})
-				if newDisk["id"] == oldDisk["id"] {
-					found = true
-				}
-			}
-			if !found {
-				var virtualDisk client.VirtualDisk
-				virtualDisk.DiskSizeMb = newDisk["size"].(int)
-				c.VirtualMachine.CreateDisk(d.Id(), &virtualDisk)
-			}
-		}
-
 	}
 
 	if d.HasChange("network_interface") {
-		oldNetworkInterfaces, newNetworkInterfaces := d.GetChange("network_interface")
-
-		// Removed network interfaces
-		for _, oldNetworkInterfaceRaw := range oldNetworkInterfaces.([]interface{}) {
-			oldNetworkInterface := oldNetworkInterfaceRaw.(map[string]interface{})
+		_, newNetworkInterfaces := d.GetChange("network_interface")
+		for _, nic := range newNetworkInterfaces.([]interface{}) {
+			tfNic := nic.(map[string]interface{})
 			found := false
-			for _, newNetworkInterfaceRaw := range newNetworkInterfaces.([]interface{}) {
-				newNetworkInterface := newNetworkInterfaceRaw.(map[string]interface{})
-				if newNetworkInterface["id"] == oldNetworkInterface["id"] {
+			for _, vmNic := range vm.NetworkInterfaces {
+				if vmNic.MacAddress == tfNic["mac_address"] || vmNic.Label == tfNic["label"] {
 					found = true
 				}
 			}
+
 			if !found {
-				c.VirtualMachine.DeleteNetworkInterface(d.Id(), oldNetworkInterface["id"].(string))
+				n := client.NetworkInterface{}
+				n.Network = tfNic["network"].(string)
+				n.Primary = tfNic["primary"].(bool)
+				n.Connected = tfNic["connected"].(bool)
+				n.Label = tfNic["label"].(string)
+				vm.NetworkInterfaces = append(vm.NetworkInterfaces, n)
 			}
 		}
-
-		// Added network interfaces
-		for _, newNetworkInterfaceRaw := range newNetworkInterfaces.([]interface{}) {
-			newNetworkInterface := newNetworkInterfaceRaw.(map[string]interface{})
-			found := false
-			for _, oldNetworkInterfaceRaw := range oldNetworkInterfaces.([]interface{}) {
-				oldNetworkInterface := oldNetworkInterfaceRaw.(map[string]interface{})
-				if newNetworkInterface["id"] == oldNetworkInterface["id"] {
-					found = true
-				}
-			}
-			if !found {
-				var virtualNetworkInterface client.NetworkInterface
-				network, err := c.VirtualNetwork.Get(newNetworkInterface["network"].(string))
-				if err != nil {
-					return err
-				}
-				virtualNetworkInterface.Network = *network
-				c.VirtualMachine.CreateNetworkInterface(d.Id(), &virtualNetworkInterface)
-			}
-		}
-
 	}
 
+	log.Printf("[INFO] Updating VirtualMachine: %s", d.Id())
+	task, err := c.VirtualMachine.Update(vm.Id, vm)
+
+	if err != nil {
+		return fmt.Errorf(
+			"Error while updating VirtualMachine (%s): %s", d.Id(), err)
+	}
+
+	_, _ = c.Task.WaitFor(task.Id, 5*time.Minute)
 	if machineHasShutdown == true {
-		c.VirtualMachine.Control(d.Id(), client.VmActionPowerOn)
+		//	c.VirtualMachine.Control(d.Id(), client.VmActionPowerOn)
 	}
 
 	return resourcePreviderVirtualMachineRead(d, meta)
+
 }
 
 func resourcePreviderVirtualMachineDelete(d *schema.ResourceData, meta interface{}) error {
 	c := meta.(*client.BaseClient)
 
-	resourcePreviderVirtualMachineRead(d, meta)
+	_ = resourcePreviderVirtualMachineRead(d, meta)
 
 	log.Printf("[INFO] Deleting VirtualMachine: %s", d.Id())
 
@@ -443,7 +497,7 @@ func resourcePreviderVirtualMachineDelete(d *schema.ResourceData, meta interface
 		return fmt.Errorf("Error deleting VirtualMachine: %s", err)
 	}
 
-	c.Task.WaitForTask(task, 30*time.Minute)
+	c.Task.WaitFor(task.Id, 30*time.Minute)
 
 	log.Printf("[INFO] Deletion task ID: %s", task.Id)
 
@@ -487,6 +541,7 @@ func getVirtualMachineStatus(d *schema.ResourceData, meta interface{}) string {
 	vm, err := c.VirtualMachine.Get(d.Id())
 
 	if err != nil {
+		log.Printf("invalid VirtualMachine id: %v", err)
 		fmt.Errorf("invalid VirtualMachine id: %v", err)
 		return "UNKNOWN"
 	}
@@ -508,7 +563,7 @@ func gracefullyShutdownVirtualMachine(d *schema.ResourceData, meta interface{}) 
 		task, err = c.VirtualMachine.Control(d.Id(), client.VmActionPowerOff)
 	}
 
-	c.Task.WaitForTask(task, 5*time.Minute)
+	c.Task.WaitFor(task.Id, 5*time.Minute)
 
 	_, err = WaitForVirtualMachineAttribute(d, "POWEREDOFF", []string{""}, "state", meta)
 	if err != nil {

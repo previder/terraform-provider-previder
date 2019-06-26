@@ -26,8 +26,6 @@ func Provider() terraform.ResourceProvider {
 		ResourcesMap: map[string]*schema.Resource{
 			"previder_virtualmachine": resourcePreviderVirtualMachine(),
 			"previder_virtualnetwork": resourcePreviderVirtualNetwork(),
-			"previder_dnsrecord":      resourcePreviderDNSRecord(),
-			"previder_sshkey":         resourcePreviderSSHKey(),
 		},
 
 		ConfigureFunc: providerConfigure,
