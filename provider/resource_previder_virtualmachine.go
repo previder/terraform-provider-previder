@@ -342,7 +342,7 @@ func resourcePreviderVirtualMachineRead(d *schema.ResourceData, meta interface{}
 		networkInterfaces[i]["ipv4_address"] = ipv4Address
 		networkInterfaces[i]["ipv6_address"] = ipv6Address
 
-		if primaryNetworkInterfaceIdx == i {
+		if primaryNetworkInterfaceIdx == i && len(networkInterfaces[i]["ipv4_address"].([]string)) > 0 {
 			networkInterfaces[i]["primary"] = true
 
 			d.Set("ipv4_address", networkInterfaces[0]["ipv4_address"].([]string)[0])
