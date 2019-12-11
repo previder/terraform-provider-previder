@@ -5,6 +5,14 @@ The provider needs to be configured with an API token that will be provided by P
 
 Before using this README, make sure that you have installed the Previder Provider using INSTALL.
 
+
+## Important notice
+
+This Terraform provider is provided to you "as-is" and without warranty of any kind, express, implied or otherwise, including without limitation, any warranty of fitness for a particular purpose.
+
+If you have any questions, we encourage you to do your own research, seek out experts, and discuss with your community.
+If there are questions that remain unanswered, please send an e-mail to support@previder.nl. We’re going to do our best to help answer the questions that you have. Since the Terraform provider is provided for free, please understand that more complex questions can only be answered  for a fee.
+
 ## Example Usage 
 ```
 provider "previder" {
