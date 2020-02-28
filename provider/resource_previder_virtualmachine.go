@@ -7,7 +7,6 @@ import (
 	"github.com/hashicorp/terraform/helper/schema"
 	"github.com/previder/previder-go-sdk/client"
 	"log"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -50,7 +49,7 @@ func resourcePreviderVirtualMachine() *schema.Resource {
 					Schema: map[string]*schema.Schema{
 						"id": {
 							Type:     schema.TypeString,
-							Optional: true,
+							Computed: true,
 						},
 						"size": {
 							Type:     schema.TypeInt,
@@ -75,7 +74,7 @@ func resourcePreviderVirtualMachine() *schema.Resource {
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
 						"id": {
-							Type:     schema.TypeInt,
+							Type:     schema.TypeString,
 							Computed: true,
 						},
 						"network": {
@@ -83,10 +82,6 @@ func resourcePreviderVirtualMachine() *schema.Resource {
 							Required: true,
 						},
 						"connected": {
-							Type:     schema.TypeBool,
-							Optional: true,
-						},
-						"primary": {
 							Type:     schema.TypeBool,
 							Optional: true,
 						},
@@ -135,10 +130,6 @@ func resourcePreviderVirtualMachine() *schema.Resource {
 				Computed: true,
 			},
 			"state": {
-				Type:     schema.TypeString,
-				Computed: true,
-			},
-			"first_ipv4_address": {
 				Type:     schema.TypeString,
 				Computed: true,
 			},
@@ -222,9 +213,6 @@ func resourcePreviderVirtualMachineCreate(d *schema.ResourceData, meta interface
 				vm.NetworkInterfaces[i].Label = v
 			}
 
-			if _, ok := networkInterface["primary"].(bool); ok {
-				_ = d.Set("primaryNetworkInterfaceIdx", i)
-			}
 		}
 	} else {
 		var networkInterface client.NetworkInterface
@@ -239,8 +227,7 @@ func resourcePreviderVirtualMachineCreate(d *schema.ResourceData, meta interface
 			disk := vL.(map[string]interface{})
 
 			if v, ok := disk["id"].(string); ok && len(v) > 0 {
-				vm.Disks[i].Id = new(int)
-				*vm.Disks[i].Id, _ = strconv.Atoi(v)
+				vm.Disks[i].Id = &v
 			}
 
 			if v, ok := disk["size"].(int); ok && v > 0 {
@@ -297,11 +284,6 @@ func resourcePreviderVirtualMachineRead(d *schema.ResourceData, meta interface{}
 	_ = d.Set("termination_protection", vm.TerminationProtectionEnabled)
 	_ = d.Set("initial_password", vm.InitialPassword)
 
-	var primaryNetworkInterfaceIdx = 0
-	if idx, ok := d.GetOk("primaryNetworkInterfaceIdx"); ok {
-		primaryNetworkInterfaceIdx = idx.(int)
-	}
-
 	disks := make([]map[string]interface{}, len(vm.Disks))
 
 	for vmIdx, vmDisk := range vm.Disks {
@@ -310,7 +292,7 @@ func resourcePreviderVirtualMachineRead(d *schema.ResourceData, meta interface{}
 				disk := tfDisk.(map[string]interface{})
 				if disk["uuid"] == vmDisk.Uuid || disk["label"] == vmDisk.Label {
 					disks[vmIdx] = make(map[string]interface{})
-					disks[vmIdx]["id"] = strconv.Itoa(*vmDisk.Id)
+					disks[vmIdx]["id"] = *vmDisk.Id
 					disks[vmIdx]["size"] = vmDisk.Size
 					disks[vmIdx]["uuid"] = vmDisk.Uuid
 					disks[vmIdx]["label"] = vmDisk.Label
@@ -323,7 +305,7 @@ func resourcePreviderVirtualMachineRead(d *schema.ResourceData, meta interface{}
 	networkInterfaces := make([]map[string]interface{}, len(vm.NetworkInterfaces))
 	for i, v := range vm.NetworkInterfaces {
 		networkInterfaces[i] = make(map[string]interface{})
-		networkInterfaces[i]["id"] = i
+		networkInterfaces[i]["id"] = v.Id
 		networkInterfaces[i]["network"] = v.Network
 		networkInterfaces[i]["mac_address"] = v.MacAddress
 		networkInterfaces[i]["label"] = v.Label
@@ -342,15 +324,10 @@ func resourcePreviderVirtualMachineRead(d *schema.ResourceData, meta interface{}
 		networkInterfaces[i]["ipv4_address"] = ipv4Address
 		networkInterfaces[i]["ipv6_address"] = ipv6Address
 
-		if primaryNetworkInterfaceIdx == i && len(networkInterfaces[i]["ipv4_address"].([]string)) > 0 {
-			networkInterfaces[i]["primary"] = true
-
-			d.Set("ipv4_address", networkInterfaces[0]["ipv4_address"].([]string)[0])
-			d.SetConnInfo(map[string]string{
-				"type": "ssh",
-				"host": networkInterfaces[0]["ipv4_address"].([]string)[0],
-			})
-		}
+        if _, ok := d.GetOk("ipv4_address"); !ok {
+            log.Printf("[INFO] Using IPv4 address: %s", ipv4Address)
+            d.Set("ipv4_address", ipv4Address)
+        }
 	}
 
 	err = d.Set("network_interface", networkInterfaces)
@@ -399,10 +376,10 @@ func resourcePreviderVirtualMachineUpdate(d *schema.ResourceData, meta interface
 		for _, disk := range newDisks.([]interface{}) {
 			found := false
 			tfDisk := disk.(map[string]interface{})
-			for _, vmDisk := range vm.Disks {
+			for i, vmDisk := range vm.Disks {
 				if tfDisk["uuid"] == vmDisk.Uuid {
-					vm.Disks[*vmDisk.Id].Size = uint64(tfDisk["size"].(int))
-					vm.Disks[*vmDisk.Id].Label = tfDisk["label"].(string)
+					vm.Disks[i].Size = uint64(tfDisk["size"].(int))
+					vm.Disks[i].Label = tfDisk["label"].(string)
 					found = true
 				}
 			}
@@ -417,7 +394,7 @@ func resourcePreviderVirtualMachineUpdate(d *schema.ResourceData, meta interface
 		}
 
 		// Removed disks
-		for _, vmDisk := range vm.Disks {
+		for i, vmDisk := range vm.Disks {
 			found := false
 			for _, disk := range newDisks.([]interface{}) {
 				tfDisk := disk.(map[string]interface{})
@@ -428,7 +405,6 @@ func resourcePreviderVirtualMachineUpdate(d *schema.ResourceData, meta interface
 			}
 
 			if !found {
-				i := *vmDisk.Id
 				vm.Disks = append(vm.Disks[:i], vm.Disks[i+1:]...)
 			}
 		}
@@ -439,8 +415,9 @@ func resourcePreviderVirtualMachineUpdate(d *schema.ResourceData, meta interface
 		for _, nic := range newNetworkInterfaces.([]interface{}) {
 			tfNic := nic.(map[string]interface{})
 			found := false
-			for _, vmNic := range vm.NetworkInterfaces {
+			for i, vmNic := range vm.NetworkInterfaces {
 				if vmNic.MacAddress == tfNic["mac_address"] || vmNic.Label == tfNic["label"] {
+				    vm.NetworkInterfaces[i].Network = tfNic["network"].(string)
 					found = true
 				}
 			}
@@ -448,7 +425,6 @@ func resourcePreviderVirtualMachineUpdate(d *schema.ResourceData, meta interface
 			if !found {
 				n := client.NetworkInterface{}
 				n.Network = tfNic["network"].(string)
-				n.Primary = tfNic["primary"].(bool)
 				n.Connected = tfNic["connected"].(bool)
 				n.Label = tfNic["label"].(string)
 				vm.NetworkInterfaces = append(vm.NetworkInterfaces, n)
@@ -458,6 +434,10 @@ func resourcePreviderVirtualMachineUpdate(d *schema.ResourceData, meta interface
 
 	log.Printf("[INFO] Updating VirtualMachine: %s", d.Id())
 	task, err := c.VirtualMachine.Update(vm.Id, vm)
+
+    vmJson, _ := json.Marshal(vm)
+    log.Printf("[DEBUG] Virtual Server Update configuration: %s", string(vmJson))
+
 
 	if err != nil {
 		return fmt.Errorf(

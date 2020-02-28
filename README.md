@@ -37,14 +37,6 @@ resource "previder_virtualnetwork" "testlab-net" {
 
 The following arguments are supported:
 - name : (Required) The network name
-- address_pool : (Optional) Create a new pool of addresses after creating the network. 
-    - ip_start : (Required) Specify the first usable network address.
-    - ip_end : (Required) Specify the last usable network address.
-    - ip_netmask : (Required)  Specify network mask ip address.
-    - ip_gateway : (Optional) Specify gateway ip address.
-    - ip_nameserver1 : (Optional) Specify nameserver ip address.
-    - ip_nameserver2 : (Optional) Specify nameserver ip address. 
-
 
 ### previder_virtualmachine
 #### Example usage 1
@@ -52,7 +44,7 @@ The following arguments are supported:
 resource "previder_virtualmachine" "testlab-vm1" {
     name = "testlab-vm1"
     cpucores = 2
-    memory = 1024
+    memory = 2048
     template = "ubuntu1804lts"
     cluster = "express"
     disk {
@@ -60,8 +52,7 @@ resource "previder_virtualmachine" "testlab-vm1" {
      label = "OS"
     }
     network_interface {
-     network = "Public WAN"
-	 primary = true
+     network = "<unique network identifier>"
 	 connected = true
 	 label = "WAN NIC"
     }
@@ -85,7 +76,7 @@ EOF
 resource "previder_virtualmachine" "testlab-vm1" {
     name = "testlab-vm1"
     cpucores = 2
-    memory = 1024
+    memory = 2048
     template = "ubuntu1804lts"
     cluster = "express"
     disk {
@@ -93,8 +84,7 @@ resource "previder_virtualmachine" "testlab-vm1" {
      label = "OS"
     }
     network_interface {
-     network = "Public WAN"
-	 primary = true
+     network = "<unique network identifier>"
 	 connected = true
 	 label = "WAN NIC"
     }
@@ -120,7 +110,7 @@ The following arguments are supported:
 - disk - (Required)
 - cluster - (Optional)
 - network_interface - (Required)
-    - network - (Required)
+    - network - (Required) This identifier can be found in the Previder Portal as ObjectId, or through the Previder API.
 - template - (Optional)
 - user_data - (Optional)
 - termination_protection - (Optional)
