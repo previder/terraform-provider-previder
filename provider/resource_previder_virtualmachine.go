@@ -40,6 +40,10 @@ func resourcePreviderVirtualMachine() *schema.Resource {
 				Type:     schema.TypeInt,
 				Required: true,
 			},
+            "group": {
+                Type:     schema.TypeString,
+                Optional: true,
+            },
 			"disk": {
 				Type:     schema.TypeList,
 				Required: true,
@@ -175,6 +179,9 @@ func resourcePreviderVirtualMachineCreate(d *schema.ResourceData, meta interface
 	if attr, ok := d.GetOk("memory"); ok {
 		vm.Memory = uint64(attr.(int))
 	}
+    if attr, ok := d.GetOk("group"); ok {
+        vm.Group = attr.(string)
+    }
 	if attr, ok := d.GetOk("user_data"); ok {
 		vm.UserData = attr.(string)
 	}
@@ -280,6 +287,7 @@ func resourcePreviderVirtualMachineRead(d *schema.ResourceData, meta interface{}
 	_ = d.Set("cpucores", vm.CpuCores)
 	_ = d.Set("template", vm.Template)
 	_ = d.Set("cluster", vm.ComputeCluster)
+	_ = d.Set("group", vm.Group)
 	_ = d.Set("state", vm.State)
 	_ = d.Set("termination_protection", vm.TerminationProtectionEnabled)
 	_ = d.Set("initial_password", vm.InitialPassword)
@@ -368,6 +376,10 @@ func resourcePreviderVirtualMachineUpdate(d *schema.ResourceData, meta interface
 
 		_, _ = c.Task.WaitFor(task.Id, 5*time.Minute)
 
+	}
+
+	if d.HasChange("group") {
+        vm.group = d.Get("group").(string)
 	}
 
 	if d.HasChange("disk") {

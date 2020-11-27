@@ -47,6 +47,7 @@ resource "previder_virtualmachine" "testlab-vm1" {
     memory = 2048
     template = "ubuntu1804lts"
     cluster = "express"
+    group = "<unique group identifier>"
     disk {
      size = 10240
      label = "OS"
@@ -79,6 +80,7 @@ resource "previder_virtualmachine" "testlab-vm1" {
     memory = 2048
     template = "ubuntu1804lts"
     cluster = "express"
+    group = "<unique group identifier>"
     disk {
      size = 10240
      label = "OS"
@@ -109,6 +111,7 @@ The following arguments are supported:
 - memory - (Required)
 - disk - (Required)
 - cluster - (Optional)
+- group - (Optional) This identifier can be found in the Previder Portal as ObjectId, or through the Previder API. 
 - network_interface - (Required)
     - network - (Required) This identifier can be found in the Previder Portal as ObjectId, or through the Previder API.
 - template - (Optional)
