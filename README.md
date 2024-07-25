@@ -15,8 +15,17 @@ If there are questions that remain unanswered, please send an e-mail to managed@
 
 ## Example Usage 
 ```
+terraform {
+  required_providers {
+    previder = {
+      source  = "previder/previder"
+      version = "~> 1.0"
+    }
+  }
+}
+
 provider "previder" {
-    token = "<token>"
+  token = "<MY PREVIDER TOKEN>"
 }
 ```
 ## Argument reference
@@ -31,6 +40,7 @@ The following arguments are supported:
 ```
 resource "previder_virtual_network" "testlab-net" {
     name = "testlab-net"
+    type = "VLAN"
 }
 ```
 #### Argument reference
