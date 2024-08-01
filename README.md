@@ -15,6 +15,15 @@ If there are questions that remain unanswered, please send an e-mail to managed@
 
 ## Example Usage 
 ```
+terraform {
+  required_providers {
+    previder = {
+      source  = "previder/previder"
+      version = "~> 1.0"
+    }
+  }
+}
+
 provider "previder" {
     token = "<token>"
 }
