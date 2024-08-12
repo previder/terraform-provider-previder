@@ -142,6 +142,52 @@ The following arguments are supported:
 - compute_cluster (Required) - When set to a global cluster like "express", the nodes will automatically be spread over locations. When choosing a specific location, all nodes will run in that location.
 - high_available_control_plane (Optional) - when set to true, 3 control plane nodes will be deployed instead of 1
 
+### previder_staas_environment
+#### Example usage
+
+```angular2html
+resource previder_staas_environment "my_test_environment" {
+  name    = "MyTestEnv"
+  type    = "NFS"
+  cluster = "5ff6d4cc02d0fc472c40bc17"
+  windows = true
+  volumes = {
+    "TofuVol1" = {
+      name    = "TofuVol1"
+      size_mb = 10240
+      type    = "express"
+      allowed_ips_ro = ["192.168.0.0/24"]
+      allowed_ips_rw = ["192.168.1.0/24"]
+    },
+    "TofuVol2" = {
+      name    = "TofuVol2"
+      size_mb = 10240
+      type    = "express"
+      allowed_ips_ro = ["192.168.2.0/24"]
+      allowed_ips_rw = ["192.168.3.0/24"]
+    },
+  }
+  networks = {
+    "56655e04e4b0069fba0c6252" = {
+      network_id = "56655e04e4b0069fba0c6252" 
+      cidr = "192.168.1.10/24"
+    },
+    "5a17da71fcaae44a910027a9" = {
+      network_id = "5a17da71fcaae44a910027a9"
+      cidr = "192.168.2.10/24"
+    },
+  }
+}
+```
+#### Argument Reference
+The following arguments are supported:
+- name (Required)
+- type (Required) - only NFS is currently supported
+- cluster (Required) - ID of the STaaS cluster  
+- windows (Required) - set windows specific flags on this STaaS environment. Default: true
+- volumes - (Required) - The volumes are always handled alphabetically!
+- networks - (Required) - The volumes are always handled alphabetically!
+
 ## Motivation
 
 As projects besides e.g. the Previder Portal, the development team at Previder develops and maintains multiple projects aiming to integrate the Previder IaaS environment.
