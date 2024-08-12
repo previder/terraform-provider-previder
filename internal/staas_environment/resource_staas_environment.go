@@ -197,7 +197,6 @@ func (r *resourceImpl) Create(ctx context.Context, req resource.CreateRequest, r
 	create.Cluster = data.Cluster.ValueString()
 	create.Windows = data.Windows.ValueBool()
 
-	log.Println(create)
 	err := r.client.STaaSEnvironment.Create(create)
 	if err != nil {
 		resp.Diagnostics.AddError("Error creating STaaS Environment", fmt.Sprintf("An error occured during the create of a STaaS Environment: %s", err.Error()))

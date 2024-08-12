@@ -5,7 +5,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/previder/previder-go-sdk/client"
-	"log"
 )
 
 type resourceData struct {
@@ -48,8 +47,6 @@ func populateResourceData(ctx context.Context, client *client.BaseClient, data *
 	data.Name = types.StringValue(in.Name)
 	data.State = types.StringValue(in.State)
 	data.Windows = types.BoolValue(in.Windows)
-
-	log.Println(data)
 
 	var readVolumes = make(map[string]resourceDataVolume)
 	for _, v := range in.Volumes {
