@@ -101,7 +101,7 @@ The following arguments are supported:
 
 ### previder_kubernetes_cluster
 #### Example usage
-```
+```shell
 resource previder_kubernetes_cluster "testcluster" {
   name = "Tofu"
   cni = "cilium"
@@ -145,7 +145,7 @@ The following arguments are supported:
 ### previder_staas_environment
 #### Example usage
 
-```angular2html
+```shell
 resource previder_staas_environment "my_test_environment" {
   name    = "MyTestEnv"
   type    = "NFS"
@@ -168,11 +168,11 @@ resource previder_staas_environment "my_test_environment" {
     },
   }
   networks = {
-    "56655e04e4b0069fba0c6252" = {
+    "NETWORK1" = {
       network_id = "56655e04e4b0069fba0c6252" 
       cidr = "192.168.1.10/24"
     },
-    "5a17da71fcaae44a910027a9" = {
+    "NETWORK2" = {
       network_id = "5a17da71fcaae44a910027a9"
       cidr = "192.168.2.10/24"
     },
