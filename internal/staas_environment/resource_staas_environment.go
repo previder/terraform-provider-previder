@@ -190,6 +190,11 @@ func (r *resourceImpl) Create(ctx context.Context, req resource.CreateRequest, r
 		return
 	}
 
+	resp.Diagnostics.Append(r.checkNetworks(data.Networks)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
 	var create client.STaaSEnvironmentCreate
 
 	create.Name = data.Name.ValueString()
@@ -323,6 +328,11 @@ func (r *resourceImpl) Update(ctx context.Context, req resource.UpdateRequest, r
 	_, err := r.client.STaaSEnvironment.Get(state.Id.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Invalid STaaS environment", fmt.Sprintf("STaaS environment with ID %s not found", plan.Id))
+		return
+	}
+
+	resp.Diagnostics.Append(r.checkNetworks(plan.Networks)...)
+	if resp.Diagnostics.HasError() {
 		return
 	}
 
@@ -523,6 +533,20 @@ func (r *resourceImpl) Update(ctx context.Context, req resource.UpdateRequest, r
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 
+}
+
+func (r *resourceImpl) checkNetworks(networks map[string]resourceDataNetwork) diag.Diagnostics {
+	var newDiags diag.Diagnostics
+	for key, n := range networks {
+		networkResponse, err := r.client.VirtualNetwork.Get(n.NetworkId.ValueString())
+		if err != nil {
+			newDiags.AddError("Error in STaaS Environment", fmt.Sprintf("Network %s does not exists: %s", key, err.Error()))
+		}
+		if networkResponse.Type != "VLAN" {
+			newDiags.AddError("Error in STaaS Environment", fmt.Sprintf("Network %s is not of type VLAN", key))
+		}
+	}
+	return newDiags
 }
 
 func (r *resourceImpl) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
