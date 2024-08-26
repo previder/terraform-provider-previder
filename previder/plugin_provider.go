@@ -8,6 +8,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/previder/terraform-provider-previder/internal/kubernetes_cluster"
+	"github.com/previder/terraform-provider-previder/internal/staas_environment"
 	"github.com/previder/terraform-provider-previder/internal/virtual_network"
 	"github.com/previder/terraform-provider-previder/internal/virtual_server"
 )
@@ -95,5 +96,6 @@ func (p *PreviderProvider) Resources(_ context.Context) []func() resource.Resour
 		virtual_server.NewResource,
 		virtual_network.NewResource,
 		kubernetes_cluster.NewResource,
+		staas_environment.NewResource,
 	}
 }
