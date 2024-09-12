@@ -1,6 +1,6 @@
 module github.com/previder/terraform-provider-previder
 
-go 1.22.0
+go 1.23.1
 
 require (
 	github.com/cenkalti/backoff/v4 v4.3.0
@@ -9,7 +9,7 @@ require (
 	github.com/hashicorp/terraform-plugin-go v0.23.0
 	github.com/hashicorp/terraform-plugin-log v0.9.0
 	github.com/hashicorp/terraform-plugin-mux v0.16.0
-	github.com/previder/previder-go-sdk v1.2.0
+	github.com/previder/previder-go-sdk v1.2.1
 )
 
 require (
