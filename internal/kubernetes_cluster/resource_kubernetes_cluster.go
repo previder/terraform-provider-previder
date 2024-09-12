@@ -65,6 +65,7 @@ func (r *resourceImpl) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 		},
 		"version": schema.StringAttribute{
 			Optional: true,
+			Computed: true,
 		},
 		"vips": schema.ListAttribute{
 			Required:    true,
