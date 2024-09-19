@@ -194,13 +194,13 @@ The following arguments are supported:
 - nameservers (Optional) - Only required when dns_enabled is true
 - termination_protected (Optional)
 - icmp_wan_enabled (Optional) - Default true
-- icmp_wan_enabled (Optional) - Default true
+- icmp_lan_enabled (Optional) - Default true
 - nat_rules (Required) - Map of Nat rules
-  - port (Required)
+  - port (Required) - External port
   - protocol (Required) - Valid values are TCP or UDP
   - active (Required)
   - nat_destination (Required) - Valid IP address
-  - nat_port (Required)
+  - nat_port (Required) - Port on the destination host
   - source (Optional) - Valid CIDR to specify a source
 
 
