@@ -29,7 +29,7 @@ var _ resource.ResourceWithConfigure = (*resourceImpl)(nil)
 var _ resource.ResourceWithImportState = (*resourceImpl)(nil)
 
 type resourceImpl struct {
-	client *client.BaseClient
+	client *client.PreviderClient
 }
 
 func (r *resourceImpl) Metadata(_ context.Context, _ resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -565,7 +565,7 @@ func (r *resourceImpl) ImportState(ctx context.Context, req resource.ImportState
 
 }
 
-func waitForVirtualServerState(client *client.BaseClient, id string, target string) error {
+func waitForVirtualServerState(client *client.PreviderClient, id string, target string) error {
 
 	backoffOperation := func() error {
 		vm, err := client.VirtualServer.Get(id)
@@ -589,7 +589,7 @@ func waitForVirtualServerState(client *client.BaseClient, id string, target stri
 	return nil
 }
 
-func gracefullyShutdownVirtualMachine(baseClient *client.BaseClient, diag *diag.Diagnostics, id string) error {
+func gracefullyShutdownVirtualMachine(baseClient *client.PreviderClient, diag *diag.Diagnostics, id string) error {
 
 	vm, err := baseClient.VirtualServer.Get(id)
 	if vm.State == client.VmStatePoweredOff {

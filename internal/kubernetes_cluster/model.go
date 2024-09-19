@@ -32,7 +32,7 @@ type resourceData struct {
 	KubeConfig                types.String   `tfsdk:"kubeconfig"`
 }
 
-func populateResourceData(client *client.BaseClient, data *resourceData, in *client.KubernetesClusterExt) diag.Diagnostics {
+func populateResourceData(client *client.PreviderClient, data *resourceData, in *client.KubernetesClusterExt) diag.Diagnostics {
 	var diags diag.Diagnostics
 	var newDiags diag.Diagnostics
 

@@ -12,7 +12,7 @@ type Config struct {
 	CustomerId types.String `tfsdk:"customer"`
 }
 
-func (c *Config) Client() (baseClient *client.BaseClient) {
+func (c *Config) Client() (baseClient *client.PreviderClient) {
 	var url = "https://portal.previder.nl/api/"
 	if !c.Url.IsNull() && c.Url.ValueString() != "" {
 		url = c.Url.ValueString()

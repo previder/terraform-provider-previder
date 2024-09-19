@@ -7,14 +7,14 @@ import (
 	"log"
 )
 
-func ConfigureClient(providerData any) (*client.BaseClient, diag.Diagnostics) {
+func ConfigureClient(providerData any) (*client.PreviderClient, diag.Diagnostics) {
 	var diagnostics diag.Diagnostics
 
 	if providerData == nil {
 		return nil, diagnostics
 	}
 
-	baseClient, ok := providerData.(*client.BaseClient)
+	baseClient, ok := providerData.(*client.PreviderClient)
 	if !ok {
 		log.Println("Got the data")
 		diagnostics.AddError(

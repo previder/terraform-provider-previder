@@ -29,7 +29,7 @@ var _ resource.ResourceWithConfigure = (*resourceImpl)(nil)
 var _ resource.ResourceWithImportState = (*resourceImpl)(nil)
 
 type resourceImpl struct {
-	client *client.BaseClient
+	client *client.PreviderClient
 }
 
 func (r *resourceImpl) Metadata(_ context.Context, _ resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -178,7 +178,7 @@ func (r *resourceImpl) Read(ctx context.Context, req resource.ReadRequest, resp 
 		}
 	}
 
-	populateResourceData(ctx, r.client, &data, environment)
+	populateResourceData(ctx, &data, environment)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
@@ -294,7 +294,7 @@ func (r *resourceImpl) Create(ctx context.Context, req resource.CreateRequest, r
 
 	createdEnvironment, err = r.client.STaaSEnvironment.Get(createdEnvironment.Id)
 
-	populateResourceData(ctx, r.client, &data, createdEnvironment)
+	populateResourceData(ctx, &data, createdEnvironment)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
@@ -511,7 +511,7 @@ func (r *resourceImpl) Update(ctx context.Context, req resource.UpdateRequest, r
 		resp.Diagnostics.AddError("STaaS environment not found", fmt.Sprintln("STaaS environment is not found after matched in list"))
 	}
 
-	populateResourceData(ctx, r.client, &plan, updatedEnvironment)
+	populateResourceData(ctx, &plan, updatedEnvironment)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 
@@ -556,12 +556,12 @@ func (r *resourceImpl) ImportState(ctx context.Context, req resource.ImportState
 
 	var environment, _ = r.client.STaaSEnvironment.Get(req.ID)
 
-	populateResourceData(ctx, r.client, &data, environment)
+	populateResourceData(ctx, &data, environment)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 
 }
 
-func waitForSTaaSEnvironmentState(client *client.BaseClient, id types.String, target string) error {
+func waitForSTaaSEnvironmentState(client *client.PreviderClient, id types.String, target string) error {
 	log.Printf("[INFO] Waiting for STaaSEnvironment (%s) to have state %s", id, target)
 
 	backoffOperation := func() error {
@@ -587,7 +587,7 @@ func waitForSTaaSEnvironmentState(client *client.BaseClient, id types.String, ta
 	return nil
 }
 
-func waitForSTaaSVolumeState(client *client.BaseClient, id types.String, volumeId string, target string) error {
+func waitForSTaaSVolumeState(client *client.PreviderClient, id types.String, volumeId string, target string) error {
 	log.Printf("[INFO] Waiting for STaaSVolume (%s) to have state %s", id, target)
 
 	backoffOperation := func() error {
@@ -616,7 +616,7 @@ func waitForSTaaSVolumeState(client *client.BaseClient, id types.String, volumeI
 	return nil
 }
 
-func waitForSTaaSNetworkState(client *client.BaseClient, id types.String, networkId string, target []string) error {
+func waitForSTaaSNetworkState(client *client.PreviderClient, id types.String, networkId string, target []string) error {
 	log.Printf("[INFO] Waiting for STaaSNetwork (%s) to have state %s", id, target)
 
 	backoffOperation := func() error {
@@ -654,7 +654,7 @@ func contains(s []string, e string) bool {
 	return false
 }
 
-func waitForSTaaSEnvironmentDeleted(client *client.BaseClient, id types.String) error {
+func waitForSTaaSEnvironmentDeleted(client *client.PreviderClient, id types.String) error {
 	backoffOperation := func() error {
 		cluster, err := client.STaaSEnvironment.Get(id.ValueString())
 		log.Printf("Fetching environment: %v", id)
@@ -685,7 +685,7 @@ func waitForSTaaSEnvironmentDeleted(client *client.BaseClient, id types.String) 
 	return nil
 }
 
-func waitForSTaaSNetworkDeleted(client *client.BaseClient, id types.String, networkId types.String) error {
+func waitForSTaaSNetworkDeleted(client *client.PreviderClient, id types.String, networkId types.String) error {
 	backoffOperation := func() error {
 		cluster, err := client.STaaSEnvironment.Get(id.ValueString())
 		log.Printf("Fetching environment: %v", id)

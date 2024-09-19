@@ -30,7 +30,7 @@ var _ resource.ResourceWithConfigure = (*resourceImpl)(nil)
 var _ resource.ResourceWithImportState = (*resourceImpl)(nil)
 
 type resourceImpl struct {
-	client *client.BaseClient
+	client *client.PreviderClient
 }
 
 func (r *resourceImpl) Metadata(_ context.Context, _ resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -487,7 +487,7 @@ func (r *resourceImpl) processNatRules(firewallId string, dataNatRules map[strin
 			}
 		} else {
 			// New rule
-			err := r.client.VirtualFirewall.CreateNatRule(firewallId, updateNatRule)
+			_, err := r.client.VirtualFirewall.CreateNatRule(firewallId, updateNatRule)
 			if err != nil {
 				return err
 			}
@@ -528,7 +528,7 @@ func (r *resourceImpl) getAllNatRules(id string) (*[]client.VirtualFirewallNatRu
 	return rules, nil
 }
 
-func waitForVirtualFirewallState(client *client.BaseClient, id types.String, target string) error {
+func waitForVirtualFirewallState(client *client.PreviderClient, id types.String, target string) error {
 	log.Printf("[INFO] Waiting for Virtual Firewall (%s) to have state %s", id, target)
 
 	backoffOperation := func() error {
@@ -554,7 +554,7 @@ func waitForVirtualFirewallState(client *client.BaseClient, id types.String, tar
 	return nil
 }
 
-func waitForVirtualFirewallDeleted(client *client.BaseClient, id types.String) error {
+func waitForVirtualFirewallDeleted(client *client.PreviderClient, id types.String) error {
 	backoffOperation := func() error {
 		cluster, err := client.VirtualFirewall.Get(id.ValueString())
 		log.Printf("Fetching Virtual Firewall: %v", id)

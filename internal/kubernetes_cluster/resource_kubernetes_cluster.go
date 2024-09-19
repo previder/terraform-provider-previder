@@ -27,7 +27,7 @@ var _ resource.ResourceWithConfigure = (*resourceImpl)(nil)
 var _ resource.ResourceWithImportState = (*resourceImpl)(nil)
 
 type resourceImpl struct {
-	client *client.BaseClient
+	client *client.PreviderClient
 }
 
 func (r *resourceImpl) Metadata(_ context.Context, _ resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -200,32 +200,15 @@ func (r *resourceImpl) Create(ctx context.Context, req resource.CreateRequest, r
 	}
 	create.Endpoints = createEndPoints
 
-	err := r.client.KubernetesCluster.Create(create)
+	createdKubernetesCluster, err := r.client.KubernetesCluster.Create(create)
 	if err != nil {
 		resp.Diagnostics.AddError("Error creating Kubernetes Cluster", fmt.Sprintf("An error occured during the create of a Kubernetes Cluster: %s", err.Error()))
 		return
 	}
 
-	// Get id from response in the future, for now, get list and then fetch id for this entry
-	var pageRequest client.PageRequest
-	pageRequest.Size = 10
-	pageRequest.Query = create.Name
-	pageRequest.Page = 0
-	var _, result, err2 = r.client.KubernetesCluster.Page(pageRequest)
+	createdCluster, err := r.client.KubernetesCluster.Get(createdKubernetesCluster.Id)
+	data.Id = types.StringValue(createdCluster.Id)
 
-	var createdCluster *client.KubernetesClusterExt
-	if err2 != nil {
-		return
-	}
-	for _, item := range *result {
-		if item.Name == create.Name {
-			createdCluster, err2 = r.client.KubernetesCluster.Get(item.Id)
-			data.Id = types.StringValue(item.Id)
-			if err2 != nil {
-				resp.Diagnostics.AddError("Kubernetes Cluster not found", fmt.Sprintln("Kubernetes Cluster is not found after matched in list"))
-			}
-		}
-	}
 	if createdCluster == nil {
 		resp.Diagnostics.AddError("Kubernetes Cluster not found in list", fmt.Sprintln("Cluster is not found"))
 		return
@@ -337,7 +320,7 @@ func (r *resourceImpl) ImportState(ctx context.Context, req resource.ImportState
 
 }
 
-func waitForKubernetesClusterState(client *client.BaseClient, id types.String, target string) error {
+func waitForKubernetesClusterState(client *client.PreviderClient, id types.String, target string) error {
 	log.Printf("[INFO] Waiting for Kubernetes cluster (%s) to have state %s", id, target)
 
 	backoffOperation := func() error {
@@ -363,7 +346,7 @@ func waitForKubernetesClusterState(client *client.BaseClient, id types.String, t
 	return nil
 }
 
-func waitForKubernetesClusterDeleted(client *client.BaseClient, id types.String) error {
+func waitForKubernetesClusterDeleted(client *client.PreviderClient, id types.String) error {
 
 	backoffOperation := func() error {
 		cluster, err := client.KubernetesCluster.Get(id.ValueString())

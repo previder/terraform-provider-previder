@@ -25,7 +25,7 @@ var _ resource.ResourceWithConfigure = (*resourceImpl)(nil)
 var _ resource.ResourceWithImportState = (*resourceImpl)(nil)
 
 type resourceImpl struct {
-	client *client.BaseClient
+	client *client.PreviderClient
 }
 
 func (r *resourceImpl) Metadata(_ context.Context, _ resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -211,7 +211,7 @@ func (r *resourceImpl) ImportState(ctx context.Context, req resource.ImportState
 
 }
 
-func waitForVirtualNetworkState(client client.BaseClient, id string, target string) error {
+func waitForVirtualNetworkState(client client.PreviderClient, id string, target string) error {
 
 	backoffOperation := func() error {
 		network, err := client.VirtualNetwork.Get(id)
