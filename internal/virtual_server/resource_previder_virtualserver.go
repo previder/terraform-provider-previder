@@ -253,7 +253,7 @@ func (r *resourceImpl) Create(ctx context.Context, req resource.CreateRequest, r
 		create.GuestId = plan.GuestId.ValueString()
 	} else if !plan.Source.IsNull() && plan.Source.ValueString() != "" {
 		create.SourceVirtualMachine = plan.Source.ValueString()
-		sourceVm, err := r.client.VirtualMachine.Get(plan.Source.ValueString())
+		sourceVm, err := r.client.VirtualServer.Get(plan.Source.ValueString())
 		if err != nil {
 			resp.Diagnostics.AddError("Virtual server could not be found after creation", fmt.Sprintf("Error while creating VirtualMachine (%s): %s", plan.Name.ValueString(), err))
 			return
@@ -310,7 +310,7 @@ func (r *resourceImpl) Create(ctx context.Context, req resource.CreateRequest, r
 
 	create.Disks = createDisks
 
-	task, err := r.client.VirtualMachine.Create(&create)
+	task, err := r.client.VirtualServer.Create(&create)
 	if err != nil {
 		resp.Diagnostics.AddError("Error while creating Virtual Server", fmt.Sprintf("Error while creating VirtualMachine (%s): %s", plan.Name.ValueString(), err))
 		return
@@ -318,7 +318,7 @@ func (r *resourceImpl) Create(ctx context.Context, req resource.CreateRequest, r
 
 	_, _ = r.client.Task.WaitFor(task.Id, 5*time.Minute)
 
-	vm, err := r.client.VirtualMachine.Get(task.VirtualMachine)
+	vm, err := r.client.VirtualServer.Get(task.VirtualMachine)
 	if err != nil {
 		resp.Diagnostics.AddError("Virtual server could not be found after creation", fmt.Sprintf("Error while creating VirtualMachine (%s): %s", plan.Name.ValueString(), err))
 		return
@@ -353,7 +353,7 @@ func (r *resourceImpl) Read(ctx context.Context, req resource.ReadRequest, resp 
 		return
 	}
 	// Retrieve the VirtualMachine properties for updating the state
-	vm, err := r.client.VirtualMachine.Get(state.Id.ValueString())
+	vm, err := r.client.VirtualServer.Get(state.Id.ValueString())
 
 	if err != nil {
 		if err.(*client.ApiError).Code == 404 {
@@ -381,7 +381,7 @@ func (r *resourceImpl) Update(ctx context.Context, req resource.UpdateRequest, r
 	var vm *client.VirtualMachineExt
 	update := client.VirtualMachineUpdate{}
 
-	vm, err := r.client.VirtualMachine.Get(state.Id.ValueString())
+	vm, err := r.client.VirtualServer.Get(state.Id.ValueString())
 
 	if err != nil {
 		resp.Diagnostics.AddError("Virtual server not found", fmt.Sprintf("Error while getting Virtual Server (%s): %s", state.Id))
@@ -490,7 +490,7 @@ func (r *resourceImpl) Update(ctx context.Context, req resource.UpdateRequest, r
 
 	update.TerminationProtectionEnabled = plan.TerminationProtection.ValueBool()
 
-	task, err := r.client.VirtualMachine.Update(state.Id.ValueString(), &update)
+	task, err := r.client.VirtualServer.Update(state.Id.ValueString(), &update)
 
 	if err != nil {
 		resp.Diagnostics.AddError("Error updating virtual server", fmt.Sprintf("Virtual server has not been updated %s: %s", state.Name, err.Error()))
@@ -499,7 +499,7 @@ func (r *resourceImpl) Update(ctx context.Context, req resource.UpdateRequest, r
 
 	_, _ = r.client.Task.WaitFor(task.Id, 5*time.Minute)
 	if machineHasShutdown == true {
-		task, err = r.client.VirtualMachine.Control(state.Id.ValueString(), client.VmActionPowerOn)
+		task, err = r.client.VirtualServer.Control(state.Id.ValueString(), client.VmActionPowerOn)
 		_, err = r.client.Task.WaitFor(task.Id, 5*time.Minute)
 		if err != nil {
 			return
@@ -512,7 +512,7 @@ func (r *resourceImpl) Update(ctx context.Context, req resource.UpdateRequest, r
 		}
 	}
 
-	vm, err = r.client.VirtualMachine.Get(state.Id.ValueString())
+	vm, err = r.client.VirtualServer.Get(state.Id.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Virtual server could not be found after update", fmt.Sprintf("Error while updating VirtualMachine (%s): %s", plan.Name.ValueString(), err))
 		return
@@ -531,7 +531,7 @@ func (r *resourceImpl) Delete(ctx context.Context, req resource.DeleteRequest, r
 		return
 	}
 
-	var vm, _ = r.client.VirtualMachine.Get(state.Id.ValueString())
+	var vm, _ = r.client.VirtualServer.Get(state.Id.ValueString())
 
 	if vm.TerminationProtectionEnabled == true {
 		resp.Diagnostics.AddError("Virtual server not deleted", "Virtual Server is locked, skipping status check and retrying")
@@ -539,7 +539,7 @@ func (r *resourceImpl) Delete(ctx context.Context, req resource.DeleteRequest, r
 	}
 
 	// Destroy the Virtual Server
-	task, err := r.client.VirtualMachine.Delete(state.Id.ValueString())
+	task, err := r.client.VirtualServer.Delete(state.Id.ValueString())
 
 	// Handle remotely destroyed Virtual Servers
 	if err != nil {
@@ -558,7 +558,7 @@ func (r *resourceImpl) Delete(ctx context.Context, req resource.DeleteRequest, r
 func (r *resourceImpl) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
 	var data resourceData
 
-	var vm, _ = r.client.VirtualMachine.Get(req.ID)
+	var vm, _ = r.client.VirtualServer.Get(req.ID)
 
 	populateResourceData(ctx, &data, vm)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
@@ -568,7 +568,7 @@ func (r *resourceImpl) ImportState(ctx context.Context, req resource.ImportState
 func waitForVirtualServerState(client *client.BaseClient, id string, target string) error {
 
 	backoffOperation := func() error {
-		vm, err := client.VirtualMachine.Get(id)
+		vm, err := client.VirtualServer.Get(id)
 
 		if err != nil {
 			return errors.New(fmt.Sprintf("invalid Virtual Server id: %s", id))
@@ -591,15 +591,15 @@ func waitForVirtualServerState(client *client.BaseClient, id string, target stri
 
 func gracefullyShutdownVirtualMachine(baseClient *client.BaseClient, diag *diag.Diagnostics, id string) error {
 
-	vm, err := baseClient.VirtualMachine.Get(id)
+	vm, err := baseClient.VirtualServer.Get(id)
 	if vm.State == client.VmStatePoweredOff {
 		return nil
 	}
 
-	task, err := baseClient.VirtualMachine.Control(vm.Id, client.VmActionShutdown)
+	task, err := baseClient.VirtualServer.Control(vm.Id, client.VmActionShutdown)
 	if err != nil {
 		diag.AddError("Virtual server not shutting down", fmt.Sprintf("Virtual Server is not shutting down after shutdown command: %s", err.Error()))
-		task, err = baseClient.VirtualMachine.Control(vm.Id, client.VmActionPowerOff)
+		task, err = baseClient.VirtualServer.Control(vm.Id, client.VmActionPowerOff)
 	}
 
 	_, err = baseClient.Task.WaitFor(task.Id, 5*time.Minute)

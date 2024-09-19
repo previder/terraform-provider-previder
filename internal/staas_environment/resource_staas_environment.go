@@ -202,36 +202,18 @@ func (r *resourceImpl) Create(ctx context.Context, req resource.CreateRequest, r
 	create.Cluster = data.Cluster.ValueString()
 	create.Windows = data.Windows.ValueBool()
 
-	err := r.client.STaaSEnvironment.Create(create)
+	createdEnvironmentReference, err := r.client.STaaSEnvironment.Create(create)
 	if err != nil {
 		resp.Diagnostics.AddError("Error creating STaaS Environment", fmt.Sprintf("An error occured during the create of a STaaS Environment: %s", err.Error()))
 		return
 	}
 
-	// Get id from response in the future, for now, get list and then fetch id for this entry
-	var pageRequest client.PageRequest
-	pageRequest.Size = 10
-	pageRequest.Query = create.Name
-	pageRequest.Page = 0
-	var _, result, err2 = r.client.STaaSEnvironment.Page(pageRequest)
-
-	var createdEnvironment *client.STaaSEnvironmentExt
-	if err2 != nil {
+	createdEnvironment, err := r.client.STaaSEnvironment.Get(createdEnvironmentReference.Id)
+	if err == nil {
+		resp.Diagnostics.AddError("STaaS Environment not found after creation", "Environment is not found")
 		return
 	}
-	for _, item := range *result {
-		if item.Name == create.Name {
-			createdEnvironment, err2 = r.client.STaaSEnvironment.Get(item.Id)
-			data.Id = types.StringValue(item.Id)
-			if err2 != nil {
-				resp.Diagnostics.AddError("STaaS Environment not found", fmt.Sprintln("STaaS Environment is not found after matched in list"))
-			}
-		}
-	}
-	if createdEnvironment == nil {
-		resp.Diagnostics.AddError("STaaS Environment not found in list", fmt.Sprintln("Environment is not found"))
-		return
-	}
+	data.Id = types.StringValue(createdEnvironment.Id)
 
 	if data.Id.IsNull() {
 		resp.Diagnostics.AddError("Invalid ID", fmt.Sprintln("An invalid (empty) id was returned after creation"))
@@ -265,7 +247,7 @@ func (r *resourceImpl) Create(ctx context.Context, req resource.CreateRequest, r
 
 		err = r.client.STaaSEnvironment.CreateVolume(createdEnvironment.Id, volumeCreate)
 
-		createdEnvironment, err2 = r.client.STaaSEnvironment.Get(createdEnvironment.Id)
+		createdEnvironment, err = r.client.STaaSEnvironment.Get(createdEnvironment.Id)
 
 		var volumeId = ""
 		for _, b := range createdEnvironment.Volumes {
@@ -291,7 +273,7 @@ func (r *resourceImpl) Create(ctx context.Context, req resource.CreateRequest, r
 
 		err = r.client.STaaSEnvironment.CreateNetwork(createdEnvironment.Id, networkCreate)
 
-		createdEnvironment, err2 = r.client.STaaSEnvironment.Get(createdEnvironment.Id)
+		createdEnvironment, err = r.client.STaaSEnvironment.Get(createdEnvironment.Id)
 
 		var networkId = ""
 		for _, b := range createdEnvironment.Networks {
@@ -310,7 +292,7 @@ func (r *resourceImpl) Create(ctx context.Context, req resource.CreateRequest, r
 		err = waitForSTaaSNetworkState(r.client, data.Id, networkId, []string{"READY", "SYNCED"})
 	}
 
-	createdEnvironment, err2 = r.client.STaaSEnvironment.Get(createdEnvironment.Id)
+	createdEnvironment, err = r.client.STaaSEnvironment.Get(createdEnvironment.Id)
 
 	populateResourceData(ctx, r.client, &data, createdEnvironment)
 
