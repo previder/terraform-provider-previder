@@ -157,7 +157,7 @@ func (r *resourceImpl) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 						Required: true,
 					},
 					"protocol": schema.StringAttribute{
-						Optional: true,
+						Required: true,
 					},
 					"active": schema.BoolAttribute{
 						Required: true,
@@ -232,25 +232,29 @@ func (r *resourceImpl) Create(ctx context.Context, req resource.CreateRequest, r
 		return
 	}
 	create.DhcpEnabled = data.DhcpEnabled.ValueBool()
-	create.DhcpRangeStart = net.ParseIP(data.DhcpRangeStart.ValueString())
-	if !network.Contains(create.DhcpRangeStart) {
-		resp.Diagnostics.AddError("Error creating Virtual Firewall", fmt.Sprintf("The DHCP range start is not in the LAN subnet %v-%v", network.String(), create.DhcpRangeStart))
-		return
+	if create.DhcpEnabled {
+		create.DhcpRangeStart = net.ParseIP(data.DhcpRangeStart.ValueString())
+		if !network.Contains(create.DhcpRangeStart) {
+			resp.Diagnostics.AddError("Error creating Virtual Firewall", fmt.Sprintf("The DHCP range start is not in the LAN subnet %v-%v", network.String(), create.DhcpRangeStart))
+			return
+		}
+		create.DhcpRangeEnd = net.ParseIP(data.DhcpRangeEnd.ValueString())
+		if !network.Contains(create.DhcpRangeEnd) {
+			resp.Diagnostics.AddError("Error creating Virtual Firewall", "The DHCP range end is not in the LAN subnet")
+			return
+		}
+		create.LocalDomainName = data.LocalDomainName.ValueString()
 	}
-	create.DhcpRangeEnd = net.ParseIP(data.DhcpRangeEnd.ValueString())
-	if !network.Contains(create.DhcpRangeEnd) {
-		resp.Diagnostics.AddError("Error creating Virtual Firewall", "The DHCP range end is not in the LAN subnet")
-		return
-	}
-	create.LocalDomainName = data.LocalDomainName.ValueString()
 	create.DnsEnabled = data.DnsEnabled.ValueBool()
-	var createNameservers []net.IP
-	var dataNameservers []types.String
-	data.Nameservers.ElementsAs(ctx, &dataNameservers, false)
-	for _, nameserver := range dataNameservers {
-		createNameservers = append(createNameservers, net.ParseIP(nameserver.ValueString()))
+	if create.DnsEnabled {
+		var createNameservers []net.IP
+		var dataNameservers []types.String
+		data.Nameservers.ElementsAs(ctx, &dataNameservers, false)
+		for _, nameserver := range dataNameservers {
+			createNameservers = append(createNameservers, net.ParseIP(nameserver.ValueString()))
+		}
+		create.Nameservers = createNameservers
 	}
-	create.Nameservers = createNameservers
 
 	create.TerminationProtected = data.TerminationProtected.ValueBool()
 	create.IcmpWanEnabled = data.IcmpWanEnabled.ValueBool()
@@ -333,25 +337,31 @@ func (r *resourceImpl) Update(ctx context.Context, req resource.UpdateRequest, r
 		return
 	}
 	update.DhcpEnabled = plan.DhcpEnabled.ValueBool()
-	update.DhcpRangeStart = net.ParseIP(plan.DhcpRangeStart.ValueString())
-	if !network.Contains(update.DhcpRangeStart) {
-		resp.Diagnostics.AddError("Error updating Virtual Firewall", "The DHCP range start is not in the LAN subnet")
-		return
+	if update.DhcpEnabled {
+		update.DhcpRangeStart = net.ParseIP(plan.DhcpRangeStart.ValueString())
+		if !network.Contains(update.DhcpRangeStart) {
+			resp.Diagnostics.AddError("Error updating Virtual Firewall", "The DHCP range start is not in the LAN subnet")
+			return
+		}
+		update.DhcpRangeEnd = net.ParseIP(plan.DhcpRangeEnd.ValueString())
+		if !network.Contains(update.DhcpRangeEnd) {
+			resp.Diagnostics.AddError("Error updating Virtual Firewall", "The DHCP range end is not in the LAN subnet")
+			return
+		}
+		update.LocalDomainName = plan.LocalDomainName.ValueString()
 	}
-	update.DhcpRangeEnd = net.ParseIP(plan.DhcpRangeEnd.ValueString())
-	if !network.Contains(update.DhcpRangeEnd) {
-		resp.Diagnostics.AddError("Error updating Virtual Firewall", "The DHCP range end is not in the LAN subnet")
-		return
-	}
-	update.LocalDomainName = plan.LocalDomainName.ValueString()
+
 	update.DnsEnabled = plan.DnsEnabled.ValueBool()
-	var createNameservers []net.IP
-	var dataNameservers []types.String
-	plan.Nameservers.ElementsAs(ctx, &dataNameservers, false)
-	for _, nameserver := range dataNameservers {
-		createNameservers = append(createNameservers, net.ParseIP(nameserver.ValueString()))
+	if update.DnsEnabled {
+		var createNameservers []net.IP
+		var dataNameservers []types.String
+		plan.Nameservers.ElementsAs(ctx, &dataNameservers, false)
+		for _, nameserver := range dataNameservers {
+			createNameservers = append(createNameservers, net.ParseIP(nameserver.ValueString()))
+		}
+		update.Nameservers = createNameservers
 	}
-	update.Nameservers = createNameservers
+
 	update.TerminationProtected = plan.TerminationProtected.ValueBool()
 	update.IcmpWanEnabled = plan.IcmpWanEnabled.ValueBool()
 	update.IcmpLanEnabled = plan.IcmpLanEnabled.ValueBool()

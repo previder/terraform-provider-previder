@@ -142,6 +142,68 @@ The following arguments are supported:
 - compute_cluster (Required) - When set to a global cluster like "express", the nodes will automatically be spread over locations. When choosing a specific location, all nodes will run in that location.
 - high_available_control_plane (Optional) - when set to true, 3 control plane nodes will be deployed instead of 1
 
+### previder_virtual_firewall
+#### Example usage
+```shell
+resource previder_virtual_firewall "fw01" {
+  name = "FW Tofu"
+  type = "previder"
+  network = "<network id>"
+  group = "<group id, empty or not defined>"
+  lan_address = "192.168.1.1/24"
+  dhcp_enabled = true
+  dhcp_range_start = "192.168.1.10"
+  dhcp_range_end = "192.168.1.100"
+  dns_enabled = true
+  nameservers = ["80.65.96.50","62.165.127.222"]
+  termination_protected = false
+  icmp_wan_enabled = true
+  icmp_lan_enabled = true
+  nat_rules = {
+    "Web 443 to webserver 8080" = {
+       port = 443
+       protocol = "TCP"
+       active = true
+       nat_destination = "192.168.1.200"
+       nat_port = 8080
+    },
+    "6443 to kubernetes from office" = {
+       port = 6443
+       protocol = "TCP"
+       active = true
+       nat_destination = "192.168.1.250"
+       nat_port = 6443
+       source = "1.2.3.4/24"
+    }
+  }
+}
+```
+
+#### Argument reference
+The following arguments are supported:
+- name (Required)
+- type (Required)
+- network (Required)
+- group (Optional)
+- lan_address (Required) - LAN CIDR eg 192.168.1.1/24
+- dhcp_enabled (Required)
+- dhcp_range_start (Optional) - Only required when dhcp_enabled is true
+- dhcp_range_end (Optional) - Only required when dhcp_enabled is true
+- local_domain_name (Optional) - Only required when dhcp_enabled is true
+- dns_enabled (Required)
+- nameservers (Optional) - Only required when dns_enabled is true
+- termination_protected (Optional)
+- icmp_wan_enabled (Optional) - Default true
+- icmp_wan_enabled (Optional) - Default true
+- nat_rules (Required) - Map of Nat rules
+  - port (Required)
+  - protocol (Required) - Valid values are TCP or UDP
+  - active (Required)
+  - nat_destination (Required) - Valid IP address
+  - nat_port (Required)
+  - source (Optional) - Valid CIDR to specify a source
+
+
 ### previder_staas_environment
 #### Example usage
 
