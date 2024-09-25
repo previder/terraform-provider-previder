@@ -83,6 +83,9 @@ func (r *resourceImpl) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 		},
 		"group": schema.StringAttribute{
 			Optional: true,
+			PlanModifiers: []planmodifier.String{
+				stringplanmodifier.UseStateForUnknown(),
+			},
 		},
 		"group_name": schema.StringAttribute{
 			Computed: true,
