@@ -128,7 +128,7 @@ func (r *resourceImpl) Read(ctx context.Context, req resource.ReadRequest, resp 
 
 	if err != nil {
 		if err.(*client.ApiError).Code == 404 {
-			resp.Diagnostics.AddError("Virtual network not found", fmt.Sprintf("Error while getting Virtual network (%s): %s", data.Id))
+			resp.Diagnostics.AddError("Virtual network not found", fmt.Sprintf("Error while getting Virtual network: %s", data.Id))
 			return
 		}
 		resp.Diagnostics.AddError("Invalid ID", fmt.Sprintf("Error while fetching Virtual Network (%s): %s", data.Id, err))
@@ -153,7 +153,7 @@ func (r *resourceImpl) Update(ctx context.Context, req resource.UpdateRequest, r
 	vm, err := r.client.VirtualNetwork.Get(state.Id.ValueString())
 
 	if err != nil {
-		resp.Diagnostics.AddError("Virtual server not found", fmt.Sprintf("Error while getting Virtual Server (%s): %s", state.Id))
+		resp.Diagnostics.AddError("Virtual server not found", fmt.Sprintf("Error while getting Virtual Server: %s", state.Id))
 		return
 	}
 
