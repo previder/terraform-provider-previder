@@ -70,7 +70,11 @@ func (p *PreviderProvider) Configure(ctx context.Context, req provider.Configure
 		CustomerId: data.CustomerId,
 	}
 
-	var baseClient = config.Client()
+	baseClient, err := config.Client()
+	if err != nil {
+		resp.Diagnostics.AddError("Error initialing Previder Provider", err.Error())
+		return
+	}
 	resp.DataSourceData = baseClient
 	resp.ResourceData = baseClient
 
