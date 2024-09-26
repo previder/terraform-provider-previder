@@ -75,6 +75,7 @@ func (r *resourceImpl) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 		},
 		"group": schema.StringAttribute{
 			Optional: true,
+			Computed: true,
 			PlanModifiers: []planmodifier.String{
 				stringplanmodifier.UseStateForUnknown(),
 			},
@@ -180,7 +181,6 @@ func (r *resourceImpl) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 			Computed: true,
 			PlanModifiers: []planmodifier.String{
 				stringplanmodifier.UseStateForUnknown(),
-				stringplanmodifier.RequiresReplaceIfConfigured(),
 			},
 		},
 		"guest_id": schema.StringAttribute{
@@ -188,7 +188,6 @@ func (r *resourceImpl) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 			Computed: true,
 			PlanModifiers: []planmodifier.String{
 				stringplanmodifier.UseStateForUnknown(),
-				stringplanmodifier.RequiresReplaceIfConfigured(),
 			},
 		},
 		"source": schema.StringAttribute{
@@ -196,7 +195,6 @@ func (r *resourceImpl) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 			Computed: true,
 			PlanModifiers: []planmodifier.String{
 				stringplanmodifier.UseStateForUnknown(),
-				stringplanmodifier.RequiresReplaceIfConfigured(),
 			},
 		},
 		"user_data": schema.StringAttribute{
@@ -245,6 +243,11 @@ func (r *resourceImpl) Create(ctx context.Context, req resource.CreateRequest, r
 	create.UserData = plan.UserData.ValueString()
 	create.ProvisioningType = plan.ProvisioningType.ValueString()
 	create.PowerOnAfterClone = true
+
+	if !validVirtualServerSource(plan) {
+		resp.Diagnostics.AddError("Error while creating Virtual Server", fmt.Sprintf("Either template, guest_id or source has to be provided, only 1 value allowed"))
+		return
+	}
 
 	var existingDisks []client.Disk
 	if !plan.Template.IsNull() && plan.Template.ValueString() != "" {
@@ -327,7 +330,11 @@ func (r *resourceImpl) Create(ctx context.Context, req resource.CreateRequest, r
 	populateResourceData(ctx, &data, vm)
 
 	data.Id = types.StringValue(task.VirtualMachine)
-	data.Source = plan.Source
+	if plan.Source.IsNull() || plan.Source.ValueString() == "" {
+		data.Source = types.StringNull()
+	} else {
+		data.Source = plan.Source
+	}
 
 	if len(vm.Template) == 0 {
 		// Guest ID or sourceVirtualMachine should stay poweredoff
@@ -563,6 +570,20 @@ func (r *resourceImpl) ImportState(ctx context.Context, req resource.ImportState
 	populateResourceData(ctx, &data, vm)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 
+}
+
+func validVirtualServerSource(data resourceData) bool {
+	count := 0
+	if !data.Template.IsNull() && data.Template.ValueString() != "" {
+		count++
+	}
+	if !data.GuestId.IsNull() && data.GuestId.ValueString() != "" {
+		count++
+	}
+	if !data.GuestId.IsNull() && data.Source.ValueString() != "" {
+		count++
+	}
+	return count == 1
 }
 
 func waitForVirtualServerState(client *client.PreviderClient, id string, target string) error {

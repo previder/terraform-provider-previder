@@ -59,6 +59,7 @@ func populateResourceData(ctx context.Context, data *resourceData, in *client.Vi
 	data.ComputeCluster = types.StringValue(in.ComputeCluster)
 	data.CpuCores = types.Int64Value(int64(in.CpuCores))
 	data.Memory = types.Int64Value(int64(in.Memory))
+
 	if len(in.Template) == 0 {
 		data.Template = types.StringNull()
 	} else {
@@ -69,6 +70,7 @@ func populateResourceData(ctx context.Context, data *resourceData, in *client.Vi
 	} else {
 		data.GuestId = types.StringValue(in.GuestId)
 	}
+
 	data.InitialPassword = types.StringValue(in.InitialPassword)
 
 	data.State = types.StringValue(in.State)
