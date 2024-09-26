@@ -68,7 +68,11 @@ func populateResourceData(client *client.PreviderClient, data *resourceData, in 
 	data.Network = types.StringValue(in.Network)
 	data.Reference = types.StringValue(in.Reference)
 
-	kubeConfigResponse, err := client.KubernetesCluster.GetKubeConfig(data.Id.ValueString(), data.Vips[0].ValueString())
+	address := in.Vips[0]
+	if len(in.Endpoints) > 0 {
+		address = in.Endpoints[0]
+	}
+	kubeConfigResponse, err := client.KubernetesCluster.GetKubeConfig(data.Id.ValueString(), address)
 	if err != nil {
 		data.KubeConfig = types.StringNull()
 	} else {
