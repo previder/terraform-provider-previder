@@ -5,6 +5,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/previder/previder-go-sdk/client"
 	"log"
+	"strings"
 )
 
 func ConfigureClient(providerData any) (*client.PreviderClient, diag.Diagnostics) {
@@ -28,8 +29,8 @@ func ConfigureClient(providerData any) (*client.PreviderClient, diag.Diagnostics
 	result, err := baseClient.ApiInfo()
 	if err != nil {
 		diagnostics.AddError(
-			"Invalid client",
-			fmt.Sprintf("API could not be queried"),
+			"Invalid client or token",
+			fmt.Sprintf("API could not be queried: %v", err),
 		)
 		return nil, diagnostics
 	}
