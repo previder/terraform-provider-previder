@@ -38,7 +38,7 @@ func (c *Config) Client() (*client.PreviderClient, error) {
 		}
 	}
 
-	d, err := client.New(&client.ClientOptions{Token: c.Token.ValueString(), BaseUrl: url, CustomerId: customerId})
+	d, err := client.New(&client.ClientOptions{Token: token, BaseUrl: url, CustomerId: customerId})
 
 	if err != nil {
 		return nil, err
