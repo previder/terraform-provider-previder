@@ -225,8 +225,8 @@ func (r *resourceImpl) Create(ctx context.Context, req resource.CreateRequest, r
 	}
 
 	createdEnvironment, err := r.client.STaaSEnvironment.Get(createdEnvironmentReference.Id)
-	if err == nil {
-		resp.Diagnostics.AddError("STaaS Environment not found after creation", "Environment is not found")
+	if err != nil {
+		resp.Diagnostics.AddError("STaaS Environment not found after creation", fmt.Sprintf("Environment is not found: %s", createdEnvironmentReference.Id))
 		return
 	}
 	data.Id = types.StringValue(createdEnvironment.Id)

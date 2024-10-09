@@ -230,11 +230,11 @@ resource previder_staas_environment "my_test_environment" {
     },
   }
   networks = {
-    "NETWORK1" = {
+    "56655e04e4b0069fba0c6252" = {
       network_id = "56655e04e4b0069fba0c6252" 
       cidr = "192.168.1.10/24"
     },
-    "NETWORK2" = {
+    "5a17da71fcaae44a910027a9" = {
       network_id = "5a17da71fcaae44a910027a9"
       cidr = "192.168.2.10/24"
     },
@@ -249,6 +249,8 @@ The following arguments are supported:
 - windows (Required) - set windows specific flags on this STaaS environment. Default: true
 - volumes - (Required) - The volumes are always handled alphabetically!
 - networks - (Required) - The volumes are always handled alphabetically!
+
+The volume and network keys **must** be exact to the name of the object, or the warning that array elements have vanished or appeared will be thrown.
 
 ## Motivation
 

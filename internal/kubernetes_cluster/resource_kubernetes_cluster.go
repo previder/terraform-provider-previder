@@ -66,6 +66,9 @@ func (r *resourceImpl) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 		"version": schema.StringAttribute{
 			Optional: true,
 			Computed: true,
+			PlanModifiers: []planmodifier.String{
+				stringplanmodifier.UseStateForUnknown(),
+			},
 		},
 		"vips": schema.ListAttribute{
 			Required:    true,
@@ -77,9 +80,6 @@ func (r *resourceImpl) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 		"endpoints": schema.ListAttribute{
 			Optional:    true,
 			ElementType: types.StringType,
-			PlanModifiers: []planmodifier.List{
-				listplanmodifier.RequiresReplaceIfConfigured(),
-			},
 		},
 		"minimal_nodes": schema.Int64Attribute{
 			Required: true,

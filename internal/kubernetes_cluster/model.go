@@ -4,7 +4,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/previder/previder-go-sdk/client"
-	"log"
 )
 
 type resourceData struct {
@@ -50,7 +49,7 @@ func populateResourceData(client *client.PreviderClient, data *resourceData, in 
 	for _, v := range in.Endpoints {
 		endpoints = append(endpoints, types.StringValue(v))
 	}
-	log.Println(endpoints)
+
 	data.Endpoints = endpoints
 	data.MinimalNodes = types.Int64Value(int64(in.MinimalNodes))
 	data.MaximalNodes = types.Int64Value(int64(in.MaximalNodes))
