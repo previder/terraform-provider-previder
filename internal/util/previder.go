@@ -5,7 +5,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/previder/previder-go-sdk/client"
 	"log"
-	"strings"
 )
 
 func ConfigureClient(providerData any) (*client.PreviderClient, diag.Diagnostics) {

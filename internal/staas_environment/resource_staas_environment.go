@@ -17,6 +17,7 @@ import (
 	"github.com/previder/terraform-provider-previder/internal/util"
 	"github.com/previder/terraform-provider-previder/internal/util/validators"
 	"log"
+	"net"
 	"reflect"
 	"strings"
 	"time"
@@ -195,6 +196,21 @@ func (r *resourceImpl) Create(ctx context.Context, req resource.CreateRequest, r
 		return
 	}
 
+	for _, volume := range data.Volumes {
+		for _, roCidr := range volume.AllowedIpsRo {
+			resp.Diagnostics.Append(r.checkCidr(roCidr)...)
+		}
+		for _, rwCidr := range volume.AllowedIpsRw {
+			resp.Diagnostics.Append(r.checkCidr(rwCidr)...)
+		}
+	}
+	for _, network := range data.Networks {
+		resp.Diagnostics.Append(r.checkCidr(network.Cidr)...)
+	}
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
 	var create client.STaaSEnvironmentCreate
 
 	create.Name = data.Name.ValueString()
@@ -314,6 +330,21 @@ func (r *resourceImpl) Update(ctx context.Context, req resource.UpdateRequest, r
 	}
 
 	resp.Diagnostics.Append(r.checkNetworks(plan.Networks)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	for _, volume := range plan.Volumes {
+		for _, roCidr := range volume.AllowedIpsRo {
+			resp.Diagnostics.Append(r.checkCidr(roCidr)...)
+		}
+		for _, rwCidr := range volume.AllowedIpsRw {
+			resp.Diagnostics.Append(r.checkCidr(rwCidr)...)
+		}
+	}
+	for _, network := range plan.Networks {
+		resp.Diagnostics.Append(r.checkCidr(network.Cidr)...)
+	}
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -528,6 +559,18 @@ func (r *resourceImpl) checkNetworks(networks map[string]resourceDataNetwork) di
 			newDiags.AddError("Error in STaaS Environment", fmt.Sprintf("Network %s is not of type VLAN", key))
 		}
 	}
+
+	return newDiags
+}
+
+func (r *resourceImpl) checkCidr(cidr types.String) diag.Diagnostics {
+	var newDiags diag.Diagnostics
+
+	_, _, err := net.ParseCIDR(cidr.ValueString())
+	if err != nil {
+		newDiags.AddError("Error  in STaaS environment", fmt.Sprintf("Invalid CIDR %s", cidr))
+	}
+
 	return newDiags
 }
 
