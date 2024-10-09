@@ -39,7 +39,7 @@ type resourceDataNetwork struct {
 	Cidr        types.String `tfsdk:"cidr"`
 }
 
-func populateResourceData(ctx context.Context, client *client.BaseClient, data *resourceData, in *client.STaaSEnvironmentExt) diag.Diagnostics {
+func populateResourceData(ctx context.Context, data *resourceData, in *client.STaaSEnvironmentExt) diag.Diagnostics {
 	var diags diag.Diagnostics
 	var newDiags diag.Diagnostics
 

@@ -7,14 +7,14 @@ import (
 	"log"
 )
 
-func ConfigureClient(providerData any) (*client.BaseClient, diag.Diagnostics) {
+func ConfigureClient(providerData any) (*client.PreviderClient, diag.Diagnostics) {
 	var diagnostics diag.Diagnostics
 
 	if providerData == nil {
 		return nil, diagnostics
 	}
 
-	baseClient, ok := providerData.(*client.BaseClient)
+	baseClient, ok := providerData.(*client.PreviderClient)
 	if !ok {
 		log.Println("Got the data")
 		diagnostics.AddError(
@@ -28,8 +28,8 @@ func ConfigureClient(providerData any) (*client.BaseClient, diag.Diagnostics) {
 	result, err := baseClient.ApiInfo()
 	if err != nil {
 		diagnostics.AddError(
-			"Invalid client",
-			fmt.Sprintf("API could not be queried"),
+			"Invalid client or token",
+			fmt.Sprintf("API could not be queried: %v", err),
 		)
 		return nil, diagnostics
 	}

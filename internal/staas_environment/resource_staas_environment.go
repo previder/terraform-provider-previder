@@ -17,6 +17,7 @@ import (
 	"github.com/previder/terraform-provider-previder/internal/util"
 	"github.com/previder/terraform-provider-previder/internal/util/validators"
 	"log"
+	"net"
 	"reflect"
 	"strings"
 	"time"
@@ -29,7 +30,7 @@ var _ resource.ResourceWithConfigure = (*resourceImpl)(nil)
 var _ resource.ResourceWithImportState = (*resourceImpl)(nil)
 
 type resourceImpl struct {
-	client *client.BaseClient
+	client *client.PreviderClient
 }
 
 func (r *resourceImpl) Metadata(_ context.Context, _ resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -178,7 +179,7 @@ func (r *resourceImpl) Read(ctx context.Context, req resource.ReadRequest, resp 
 		}
 	}
 
-	populateResourceData(ctx, r.client, &data, environment)
+	populateResourceData(ctx, &data, environment)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
@@ -195,6 +196,21 @@ func (r *resourceImpl) Create(ctx context.Context, req resource.CreateRequest, r
 		return
 	}
 
+	for _, volume := range data.Volumes {
+		for _, roCidr := range volume.AllowedIpsRo {
+			resp.Diagnostics.Append(r.checkCidr(roCidr)...)
+		}
+		for _, rwCidr := range volume.AllowedIpsRw {
+			resp.Diagnostics.Append(r.checkCidr(rwCidr)...)
+		}
+	}
+	for _, network := range data.Networks {
+		resp.Diagnostics.Append(r.checkCidr(network.Cidr)...)
+	}
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
 	var create client.STaaSEnvironmentCreate
 
 	create.Name = data.Name.ValueString()
@@ -202,36 +218,18 @@ func (r *resourceImpl) Create(ctx context.Context, req resource.CreateRequest, r
 	create.Cluster = data.Cluster.ValueString()
 	create.Windows = data.Windows.ValueBool()
 
-	err := r.client.STaaSEnvironment.Create(create)
+	createdEnvironmentReference, err := r.client.STaaSEnvironment.Create(create)
 	if err != nil {
 		resp.Diagnostics.AddError("Error creating STaaS Environment", fmt.Sprintf("An error occured during the create of a STaaS Environment: %s", err.Error()))
 		return
 	}
 
-	// Get id from response in the future, for now, get list and then fetch id for this entry
-	var pageRequest client.PageRequest
-	pageRequest.Size = 10
-	pageRequest.Query = create.Name
-	pageRequest.Page = 0
-	var _, result, err2 = r.client.STaaSEnvironment.Page(pageRequest)
-
-	var createdEnvironment *client.STaaSEnvironmentExt
-	if err2 != nil {
+	createdEnvironment, err := r.client.STaaSEnvironment.Get(createdEnvironmentReference.Id)
+	if err != nil {
+		resp.Diagnostics.AddError("STaaS Environment not found after creation", fmt.Sprintf("Environment is not found: %s", createdEnvironmentReference.Id))
 		return
 	}
-	for _, item := range *result {
-		if item.Name == create.Name {
-			createdEnvironment, err2 = r.client.STaaSEnvironment.Get(item.Id)
-			data.Id = types.StringValue(item.Id)
-			if err2 != nil {
-				resp.Diagnostics.AddError("STaaS Environment not found", fmt.Sprintln("STaaS Environment is not found after matched in list"))
-			}
-		}
-	}
-	if createdEnvironment == nil {
-		resp.Diagnostics.AddError("STaaS Environment not found in list", fmt.Sprintln("Environment is not found"))
-		return
-	}
+	data.Id = types.StringValue(createdEnvironment.Id)
 
 	if data.Id.IsNull() {
 		resp.Diagnostics.AddError("Invalid ID", fmt.Sprintln("An invalid (empty) id was returned after creation"))
@@ -265,7 +263,7 @@ func (r *resourceImpl) Create(ctx context.Context, req resource.CreateRequest, r
 
 		err = r.client.STaaSEnvironment.CreateVolume(createdEnvironment.Id, volumeCreate)
 
-		createdEnvironment, err2 = r.client.STaaSEnvironment.Get(createdEnvironment.Id)
+		createdEnvironment, err = r.client.STaaSEnvironment.Get(createdEnvironment.Id)
 
 		var volumeId = ""
 		for _, b := range createdEnvironment.Volumes {
@@ -291,7 +289,7 @@ func (r *resourceImpl) Create(ctx context.Context, req resource.CreateRequest, r
 
 		err = r.client.STaaSEnvironment.CreateNetwork(createdEnvironment.Id, networkCreate)
 
-		createdEnvironment, err2 = r.client.STaaSEnvironment.Get(createdEnvironment.Id)
+		createdEnvironment, err = r.client.STaaSEnvironment.Get(createdEnvironment.Id)
 
 		var networkId = ""
 		for _, b := range createdEnvironment.Networks {
@@ -310,9 +308,9 @@ func (r *resourceImpl) Create(ctx context.Context, req resource.CreateRequest, r
 		err = waitForSTaaSNetworkState(r.client, data.Id, networkId, []string{"READY", "SYNCED"})
 	}
 
-	createdEnvironment, err2 = r.client.STaaSEnvironment.Get(createdEnvironment.Id)
+	createdEnvironment, err = r.client.STaaSEnvironment.Get(createdEnvironment.Id)
 
-	populateResourceData(ctx, r.client, &data, createdEnvironment)
+	populateResourceData(ctx, &data, createdEnvironment)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
@@ -332,6 +330,21 @@ func (r *resourceImpl) Update(ctx context.Context, req resource.UpdateRequest, r
 	}
 
 	resp.Diagnostics.Append(r.checkNetworks(plan.Networks)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	for _, volume := range plan.Volumes {
+		for _, roCidr := range volume.AllowedIpsRo {
+			resp.Diagnostics.Append(r.checkCidr(roCidr)...)
+		}
+		for _, rwCidr := range volume.AllowedIpsRw {
+			resp.Diagnostics.Append(r.checkCidr(rwCidr)...)
+		}
+	}
+	for _, network := range plan.Networks {
+		resp.Diagnostics.Append(r.checkCidr(network.Cidr)...)
+	}
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -529,7 +542,7 @@ func (r *resourceImpl) Update(ctx context.Context, req resource.UpdateRequest, r
 		resp.Diagnostics.AddError("STaaS environment not found", fmt.Sprintln("STaaS environment is not found after matched in list"))
 	}
 
-	populateResourceData(ctx, r.client, &plan, updatedEnvironment)
+	populateResourceData(ctx, &plan, updatedEnvironment)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 
@@ -546,6 +559,18 @@ func (r *resourceImpl) checkNetworks(networks map[string]resourceDataNetwork) di
 			newDiags.AddError("Error in STaaS Environment", fmt.Sprintf("Network %s is not of type VLAN", key))
 		}
 	}
+
+	return newDiags
+}
+
+func (r *resourceImpl) checkCidr(cidr types.String) diag.Diagnostics {
+	var newDiags diag.Diagnostics
+
+	_, _, err := net.ParseCIDR(cidr.ValueString())
+	if err != nil {
+		newDiags.AddError("Error  in STaaS environment", fmt.Sprintf("Invalid CIDR %s", cidr))
+	}
+
 	return newDiags
 }
 
@@ -574,12 +599,12 @@ func (r *resourceImpl) ImportState(ctx context.Context, req resource.ImportState
 
 	var environment, _ = r.client.STaaSEnvironment.Get(req.ID)
 
-	populateResourceData(ctx, r.client, &data, environment)
+	populateResourceData(ctx, &data, environment)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 
 }
 
-func waitForSTaaSEnvironmentState(client *client.BaseClient, id types.String, target string) error {
+func waitForSTaaSEnvironmentState(client *client.PreviderClient, id types.String, target string) error {
 	log.Printf("[INFO] Waiting for STaaSEnvironment (%s) to have state %s", id, target)
 
 	backoffOperation := func() error {
@@ -605,7 +630,7 @@ func waitForSTaaSEnvironmentState(client *client.BaseClient, id types.String, ta
 	return nil
 }
 
-func waitForSTaaSVolumeState(client *client.BaseClient, id types.String, volumeId string, target string) error {
+func waitForSTaaSVolumeState(client *client.PreviderClient, id types.String, volumeId string, target string) error {
 	log.Printf("[INFO] Waiting for STaaSVolume (%s) to have state %s", id, target)
 
 	backoffOperation := func() error {
@@ -634,7 +659,7 @@ func waitForSTaaSVolumeState(client *client.BaseClient, id types.String, volumeI
 	return nil
 }
 
-func waitForSTaaSNetworkState(client *client.BaseClient, id types.String, networkId string, target []string) error {
+func waitForSTaaSNetworkState(client *client.PreviderClient, id types.String, networkId string, target []string) error {
 	log.Printf("[INFO] Waiting for STaaSNetwork (%s) to have state %s", id, target)
 
 	backoffOperation := func() error {
@@ -672,7 +697,7 @@ func contains(s []string, e string) bool {
 	return false
 }
 
-func waitForSTaaSEnvironmentDeleted(client *client.BaseClient, id types.String) error {
+func waitForSTaaSEnvironmentDeleted(client *client.PreviderClient, id types.String) error {
 	backoffOperation := func() error {
 		cluster, err := client.STaaSEnvironment.Get(id.ValueString())
 		log.Printf("Fetching environment: %v", id)
@@ -703,7 +728,7 @@ func waitForSTaaSEnvironmentDeleted(client *client.BaseClient, id types.String) 
 	return nil
 }
 
-func waitForSTaaSNetworkDeleted(client *client.BaseClient, id types.String, networkId types.String) error {
+func waitForSTaaSNetworkDeleted(client *client.PreviderClient, id types.String, networkId types.String) error {
 	backoffOperation := func() error {
 		cluster, err := client.STaaSEnvironment.Get(id.ValueString())
 		log.Printf("Fetching environment: %v", id)

@@ -1,9 +1,10 @@
 package previder
 
 import (
+	"errors"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/previder/previder-go-sdk/client"
-	"log"
+	"os"
 )
 
 type Config struct {
@@ -12,22 +13,36 @@ type Config struct {
 	CustomerId types.String `tfsdk:"customer"`
 }
 
-func (c *Config) Client() (baseClient *client.BaseClient) {
+func (c *Config) Client() (*client.PreviderClient, error) {
 	var url = "https://portal.previder.nl/api/"
 	if !c.Url.IsNull() && c.Url.ValueString() != "" {
 		url = c.Url.ValueString()
 	}
+	if os.Getenv("PREVIDER_URL") != "" {
+		url = os.Getenv("PREVIDER_URL")
+	}
+	if url == "" {
+		return nil, errors.New("no Previder URL found")
+	}
+
 	var customerId = ""
 	if !c.CustomerId.IsNull() && c.CustomerId.ValueString() != "" {
 		customerId = c.CustomerId.ValueString()
 	}
-
-	d, err := client.New(&client.ClientOptions{Token: c.Token.ValueString(), BaseUrl: url, CustomerId: customerId})
-
-	if err != nil {
-		log.Printf("[ERROR] ERROR")
-		return nil
+	var token = c.Token.ValueString()
+	if token == "" {
+		if os.Getenv("PREVIDER_TOKEN") != "" {
+			token = os.Getenv("PREVIDER_TOKEN")
+		} else {
+			return nil, errors.New("no Previder token found")
+		}
 	}
 
-	return d
+	d, err := client.New(&client.ClientOptions{Token: token, BaseUrl: url, CustomerId: customerId})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return d, nil
 }
