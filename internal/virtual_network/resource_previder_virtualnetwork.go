@@ -101,18 +101,16 @@ func (r *resourceImpl) Create(ctx context.Context, req resource.CreateRequest, r
 		return
 	}
 
-	populateResourceData(ctx, &data, network)
-
 	data.Id = types.StringValue(task.VirtualNetwork)
-
-	log.Printf("Searching for ID %s", data.Id.ValueString())
-
 	err = waitForVirtualNetworkState(*r.client, data.Id.ValueString(), client.VirtualNetworkStateReady)
-
 	if err != nil {
 		resp.Diagnostics.AddError("Invalid ID", fmt.Sprintf("Error waiting for Virtual Network (%s) to become ready: %s", data.Id, err))
 		return
 	}
+
+	populateResourceData(ctx, &data, network)
+
+	log.Printf("Searching for ID %s", data.Id.ValueString())
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }

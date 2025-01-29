@@ -5,11 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"github.com/cenkalti/backoff/v4"
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
@@ -222,7 +224,17 @@ func (r *resourceImpl) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 		},
 		"tags": schema.ListAttribute{
 			Optional:    true,
+			Computed:    true,
 			ElementType: types.StringType,
+			Default: listdefault.StaticValue(
+				types.List(types.SetValueMust(
+					types.StringType,
+					[]attr.Value{},
+				)),
+			),
+			PlanModifiers: []planmodifier.List{
+				listplanmodifier.UseStateForUnknown(),
+			},
 		},
 	}
 }
@@ -335,6 +347,8 @@ func (r *resourceImpl) Create(ctx context.Context, req resource.CreateRequest, r
 	} else {
 		data.Source = plan.Source
 	}
+
+	data.UserData = plan.UserData
 
 	if len(vm.Template) == 0 {
 		// Guest ID or sourceVirtualMachine should stay poweredoff
@@ -526,7 +540,13 @@ func (r *resourceImpl) Update(ctx context.Context, req resource.UpdateRequest, r
 	}
 
 	populateResourceData(ctx, &data, vm)
-	data.Source = plan.Source
+	if plan.Source.IsNull() || plan.Source.ValueString() == "" {
+		data.Source = types.StringNull()
+	} else {
+		data.Source = plan.Source
+	}
+	// Always set userdata, should not recreate a server based on this data
+	data.UserData = plan.UserData
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 
 }
