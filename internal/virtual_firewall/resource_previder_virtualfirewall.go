@@ -14,6 +14,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/previder/previder-go-sdk/client"
 	"github.com/previder/terraform-provider-previder/internal/util"
+	"github.com/previder/terraform-provider-previder/internal/util/sorters"
 	"log"
 	"net"
 	"strings"
@@ -467,9 +468,12 @@ func (r *resourceImpl) validateNatRules(dataNatRules map[string]resourceDataNatR
 }
 
 func (r *resourceImpl) processNatRules(firewallId string, dataNatRules map[string]resourceDataNatRule, existingData *resourceData) error {
-	for key, rule := range dataNatRules {
+	keys := sorters.SortMapKeys(dataNatRules)
+
+	for _,k := range keys {
+		rule := dataNatRules[k]
 		updateNatRule := client.VirtualFirewallNatRuleCreate{
-			Description:    key,
+			Description:    k,
 			Active:         rule.Active.ValueBool(),
 			Source:         rule.Source.ValueString(),
 			Protocol:       rule.Protocol.ValueString(),
@@ -479,7 +483,7 @@ func (r *resourceImpl) processNatRules(firewallId string, dataNatRules map[strin
 		}
 		var ruleId string
 		if existingData != nil {
-			if existingRule, ok := existingData.NatRules[key]; ok {
+			if existingRule, ok := existingData.NatRules[k]; ok {
 				ruleId = existingRule.Id.ValueString()
 			}
 		}
