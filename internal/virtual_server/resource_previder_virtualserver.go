@@ -19,6 +19,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/previder/previder-go-sdk/client"
 	"github.com/previder/terraform-provider-previder/internal/util"
+	"github.com/previder/terraform-provider-previder/internal/util/sorters"
 	"github.com/previder/terraform-provider-previder/internal/util/validators"
 	"strings"
 	"time"
@@ -292,9 +293,12 @@ func (r *resourceImpl) Create(ctx context.Context, req resource.CreateRequest, r
 	for k := range plan.NetworkInterfaces {
 		networkInterfaceKeys = append(networkInterfaceKeys, k)
 	}
+
+	keys := sorters.SortMapKeys(plan.NetworkInterfaces)
+
 	var createNetworkInterfaces []client.NetworkInterface
-	for k, v := range plan.NetworkInterfaces {
-		plannedNetworkInterface := v
+	for _, k := range keys {
+		plannedNetworkInterface := plan.NetworkInterfaces[k]
 		createNetworkInterfaces = append(createNetworkInterfaces, client.NetworkInterface{
 			Network:   plannedNetworkInterface.Network.ValueString(),
 			Connected: plannedNetworkInterface.Connected.ValueBool(),
@@ -304,9 +308,10 @@ func (r *resourceImpl) Create(ctx context.Context, req resource.CreateRequest, r
 	}
 	create.NetworkInterfaces = createNetworkInterfaces
 
+	keys = sorters.SortMapKeys(plan.Disks)
 	var createDisks []client.Disk
-	for k, v := range plan.Disks {
-		plannedDisk := v
+	for _, k := range keys {
+		plannedDisk := plan.Disks[k]
 		var newDiskId string
 		if len(existingDisks) > len(createDisks) {
 			existingDisk := existingDisks[len(createDisks)]
@@ -436,8 +441,10 @@ func (r *resourceImpl) Update(ctx context.Context, req resource.UpdateRequest, r
 
 	var updateDisks []client.DiskUpdate
 
-	for k, v := range plan.Disks {
-		plannedDisk := v
+	keys := sorters.SortMapKeys(plan.Disks)
+
+	for _, k := range keys {
+		plannedDisk := plan.Disks[k]
 		var diskId string
 		if existingDisk, ok := state.Disks[k]; ok {
 			diskId = existingDisk.Id.ValueString()
@@ -474,8 +481,10 @@ func (r *resourceImpl) Update(ctx context.Context, req resource.UpdateRequest, r
 
 	var updateNetworkInterfaces []client.NetworkInterfaceUpdate
 
-	for k, v := range plan.NetworkInterfaces {
-		plannedNetworkInterface := v
+	keys = sorters.SortMapKeys(plan.NetworkInterfaces)
+
+	for _, k := range keys {
+		plannedNetworkInterface := plan.NetworkInterfaces[k]
 		var networkInterfaceId string
 		if existingNetworkInterface, ok := state.NetworkInterfaces[k]; ok {
 			networkInterfaceId = existingNetworkInterface.Id.ValueString()

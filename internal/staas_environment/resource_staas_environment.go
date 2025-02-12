@@ -15,6 +15,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/previder/previder-go-sdk/client"
 	"github.com/previder/terraform-provider-previder/internal/util"
+	"github.com/previder/terraform-provider-previder/internal/util/sorters"
 	"github.com/previder/terraform-provider-previder/internal/util/validators"
 	"log"
 	"net"
@@ -185,18 +186,18 @@ func (r *resourceImpl) Read(ctx context.Context, req resource.ReadRequest, resp 
 }
 
 func (r *resourceImpl) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
-	var data resourceData
-	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
+	var plan resourceData
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	resp.Diagnostics.Append(r.checkNetworks(data.Networks)...)
+	resp.Diagnostics.Append(r.checkNetworks(plan.Networks)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	for _, volume := range data.Volumes {
+	for _, volume := range plan.Volumes {
 		for _, roCidr := range volume.AllowedIpsRo {
 			resp.Diagnostics.Append(r.checkCidr(roCidr)...)
 		}
@@ -204,7 +205,7 @@ func (r *resourceImpl) Create(ctx context.Context, req resource.CreateRequest, r
 			resp.Diagnostics.Append(r.checkCidr(rwCidr)...)
 		}
 	}
-	for _, network := range data.Networks {
+	for _, network := range plan.Networks {
 		resp.Diagnostics.Append(r.checkCidr(network.Cidr)...)
 	}
 	if resp.Diagnostics.HasError() {
@@ -213,10 +214,10 @@ func (r *resourceImpl) Create(ctx context.Context, req resource.CreateRequest, r
 
 	var create client.STaaSEnvironmentCreate
 
-	create.Name = data.Name.ValueString()
-	create.Type = data.Type.ValueString()
-	create.Cluster = data.Cluster.ValueString()
-	create.Windows = data.Windows.ValueBool()
+	create.Name = plan.Name.ValueString()
+	create.Type = plan.Type.ValueString()
+	create.Cluster = plan.Cluster.ValueString()
+	create.Windows = plan.Windows.ValueBool()
 
 	createdEnvironmentReference, err := r.client.STaaSEnvironment.Create(create)
 	if err != nil {
@@ -229,20 +230,23 @@ func (r *resourceImpl) Create(ctx context.Context, req resource.CreateRequest, r
 		resp.Diagnostics.AddError("STaaS Environment not found after creation", fmt.Sprintf("Environment is not found: %s", createdEnvironmentReference.Id))
 		return
 	}
-	data.Id = types.StringValue(createdEnvironment.Id)
+	plan.Id = types.StringValue(createdEnvironment.Id)
 
-	if data.Id.IsNull() {
+	if plan.Id.IsNull() {
 		resp.Diagnostics.AddError("Invalid ID", fmt.Sprintln("An invalid (empty) id was returned after creation"))
 		return
 	}
 
-	err = waitForSTaaSEnvironmentState(r.client, data.Id, "READY")
+	err = waitForSTaaSEnvironmentState(r.client, plan.Id, "READY")
 	if err != nil {
-		resp.Diagnostics.AddError("Invalid ID", fmt.Sprintf("Error waiting for STaaS environment (%s) to become ready: %s", data.Id, err))
+		resp.Diagnostics.AddError("Invalid ID", fmt.Sprintf("Error waiting for STaaS environment (%s) to become ready: %s", plan.Id, err))
 		return
 	}
 
-	for _, v := range data.Volumes {
+	keys := sorters.SortMapKeys(plan.Volumes)
+
+	for _, k := range keys {
+		v := plan.Volumes[k]
 		var volumeCreate client.STaaSVolumeCreate
 		volumeCreate.Name = v.Name.ValueString()
 		volumeCreate.SizeMb = int(v.SizeMb.ValueInt64())
@@ -275,14 +279,17 @@ func (r *resourceImpl) Create(ctx context.Context, req resource.CreateRequest, r
 		}
 
 		if volumeId == "" {
-			resp.Diagnostics.AddError("Invalid ID", fmt.Sprintf("Error waiting for volume (%s) to become ready: %s", data.Id, err))
+			resp.Diagnostics.AddError("Invalid ID", fmt.Sprintf("Error waiting for volume (%s) to become ready: %s", plan.Id, err))
 			return
 		}
 
-		err = waitForSTaaSVolumeState(r.client, data.Id, volumeId, "READY")
+		err = waitForSTaaSVolumeState(r.client, plan.Id, volumeId, "READY")
 	}
 
-	for _, n := range data.Networks {
+	keys = sorters.SortMapKeys(plan.Networks)
+
+	for _, k := range keys {
+		n := plan.Networks[k]
 		var networkCreate client.STaaSNetworkCreate
 		networkCreate.Network = n.NetworkId.ValueString()
 		networkCreate.Cidr = n.Cidr.ValueString()
@@ -301,18 +308,18 @@ func (r *resourceImpl) Create(ctx context.Context, req resource.CreateRequest, r
 		}
 
 		if networkId == "" {
-			resp.Diagnostics.AddError("Invalid ID", fmt.Sprintf("Error waiting for network (%s) to become ready: %s", data.Id, err))
+			resp.Diagnostics.AddError("Invalid ID", fmt.Sprintf("Error waiting for network (%s) to become ready: %s", plan.Id, err))
 			return
 		}
 
-		err = waitForSTaaSNetworkState(r.client, data.Id, networkId, []string{"READY", "SYNCED"})
+		err = waitForSTaaSNetworkState(r.client, plan.Id, networkId, []string{"READY", "SYNCED"})
 	}
 
 	createdEnvironment, err = r.client.STaaSEnvironment.Get(createdEnvironment.Id)
 
-	populateResourceData(ctx, &data, createdEnvironment)
+	populateResourceData(ctx, &plan, createdEnvironment)
 
-	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
 func (r *resourceImpl) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
@@ -359,8 +366,11 @@ func (r *resourceImpl) Update(ctx context.Context, req resource.UpdateRequest, r
 		err = r.client.STaaSEnvironment.Update(plan.Id.ValueString(), update)
 	}
 
+	keys := sorters.SortMapKeys(plan.Volumes)
+
 	// First go over plan volumes, and check if volumes exists state and values match
-	for _, planVolume := range plan.Volumes {
+	for _, k := range keys {
+		planVolume := plan.Volumes[k]
 		var found = false
 		for _, stateVolume := range state.Volumes {
 
@@ -472,8 +482,11 @@ func (r *resourceImpl) Update(ctx context.Context, req resource.UpdateRequest, r
 		}
 	}
 
+	keys = sorters.SortMapKeys(plan.Networks)
+
 	// Go over plan networks, and check if they are in state
-	for _, planNetwork := range plan.Networks {
+	for _, k := range keys {
+		planNetwork := plan.Networks[k]
 		var found = false
 		for _, stateNetwork := range state.Networks {
 			if planNetwork.NetworkId == stateNetwork.NetworkId {
