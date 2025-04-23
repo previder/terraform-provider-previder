@@ -102,6 +102,9 @@ func (r *resourceImpl) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 					},
 					"label": schema.StringAttribute{
 						Computed: true,
+						PlanModifiers: []planmodifier.String{
+							stringplanmodifier.UseStateForUnknown(),
+						},
 					},
 					"uuid": schema.StringAttribute{
 						Computed: true,
@@ -122,6 +125,9 @@ func (r *resourceImpl) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 				Attributes: map[string]schema.Attribute{
 					"id": schema.StringAttribute{
 						Computed: true,
+						PlanModifiers: []planmodifier.String{
+							stringplanmodifier.UseStateForUnknown(),
+						},
 					},
 					"network": schema.StringAttribute{
 						Required: true,
@@ -175,6 +181,9 @@ func (r *resourceImpl) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 					},
 					"label": schema.StringAttribute{
 						Computed: true,
+						PlanModifiers: []planmodifier.String{
+							stringplanmodifier.UseStateForUnknown(),
+						},
 					},
 				},
 			},
@@ -344,11 +353,11 @@ func (r *resourceImpl) Create(ctx context.Context, req resource.CreateRequest, r
 		return
 	}
 
-	populateResourceData(ctx, &data, vm)
+	populateResourceData(ctx, &data, vm, &plan)
 
 	data.Id = types.StringValue(task.VirtualMachine)
 	if plan.Source.IsNull() || plan.Source.ValueString() == "" {
-		data.Source = types.StringNull()
+		data.Source = types.StringValue("")
 	} else {
 		data.Source = plan.Source
 	}
@@ -390,7 +399,10 @@ func (r *resourceImpl) Read(ctx context.Context, req resource.ReadRequest, resp 
 		return
 	}
 
-	populateResourceData(ctx, &data, vm)
+	populateResourceData(ctx, &data, vm, &state)
+	data.UserData = state.UserData
+	data.Source = state.Source
+
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 
 }
@@ -495,6 +507,7 @@ func (r *resourceImpl) Update(ctx context.Context, req resource.UpdateRequest, r
 			Label:     k,
 			Connected: plannedNetworkInterface.Connected.ValueBool(),
 		})
+		resp.Diagnostics.AddWarning("updating network interface for virtual server", fmt.Sprintf("Updating network interface with label %s", plannedNetworkInterface.Label.ValueString()))
 	}
 
 	for _, existingNetworkInterface := range state.NetworkInterfaces {
@@ -527,10 +540,13 @@ func (r *resourceImpl) Update(ctx context.Context, req resource.UpdateRequest, r
 		return
 	}
 
-	_, _ = r.client.Task.WaitFor(task.Id, 5*time.Minute)
+	virtualMachineTask, _ := r.client.Task.WaitFor(task.Id, 5*time.Minute)
+	if !virtualMachineTask.Success {
+		resp.Diagnostics.AddError("Virtual server could not be updated", fmt.Sprintf("Error while updating VirtualMachine (%s): %s", plan.Name.ValueString(), virtualMachineTask.ErrorMessage))
+	}
 	if machineHasShutdown == true {
 		task, err = r.client.VirtualServer.Control(state.Id.ValueString(), client.VmActionPowerOn)
-		_, err = r.client.Task.WaitFor(task.Id, 5*time.Minute)
+		virtualMachineTask, err = r.client.Task.WaitFor(task.Id, 5*time.Minute)
 		if err != nil {
 			return
 		}
@@ -548,9 +564,9 @@ func (r *resourceImpl) Update(ctx context.Context, req resource.UpdateRequest, r
 		return
 	}
 
-	populateResourceData(ctx, &data, vm)
+	populateResourceData(ctx, &data, vm, &plan)
 	if plan.Source.IsNull() || plan.Source.ValueString() == "" {
-		data.Source = types.StringNull()
+		data.Source = types.StringValue("")
 	} else {
 		data.Source = plan.Source
 	}
@@ -588,6 +604,8 @@ func (r *resourceImpl) Delete(ctx context.Context, req resource.DeleteRequest, r
 	}
 
 	r.client.Task.WaitFor(task.Id, 30*time.Minute)
+	// Wait 3 seconds for a network of type VXLAN to be really removed from the backend
+	time.Sleep(time.Second * 3)
 
 }
 
@@ -596,7 +614,7 @@ func (r *resourceImpl) ImportState(ctx context.Context, req resource.ImportState
 
 	var vm, _ = r.client.VirtualServer.Get(req.ID)
 
-	populateResourceData(ctx, &data, vm)
+	populateResourceData(ctx, &data, vm, nil)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 
 }

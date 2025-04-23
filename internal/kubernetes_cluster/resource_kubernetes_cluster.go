@@ -8,6 +8,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
@@ -62,6 +64,9 @@ func (r *resourceImpl) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 		},
 		"state": schema.StringAttribute{
 			Computed: true,
+			PlanModifiers: []planmodifier.String{
+				stringplanmodifier.UseStateForUnknown(),
+			},
 		},
 		"version": schema.StringAttribute{
 			Optional: true,
@@ -87,13 +92,22 @@ func (r *resourceImpl) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 		"maximal_nodes": schema.Int64Attribute{
 			Optional: true,
 			Computed: true,
+			PlanModifiers: []planmodifier.Int64{
+				int64planmodifier.UseStateForUnknown(),
+			},
 		},
 		"auto_update": schema.BoolAttribute{
 			Optional: true,
+			PlanModifiers: []planmodifier.Bool{
+				boolplanmodifier.UseStateForUnknown(),
+			},
 		},
 		"auto_scale_enabled": schema.BoolAttribute{
 			Optional: true,
 			Computed: true,
+			PlanModifiers: []planmodifier.Bool{
+				boolplanmodifier.UseStateForUnknown(),
+			},
 		},
 		"control_plane_cpu_cores": schema.Int64Attribute{
 			Required: true,
@@ -133,22 +147,28 @@ func (r *resourceImpl) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 		},
 		"reference": schema.StringAttribute{
 			Computed: true,
+			PlanModifiers: []planmodifier.String{
+				stringplanmodifier.UseStateForUnknown(),
+			},
 		},
 		"kubeconfig": schema.StringAttribute{
 			Computed: true,
+			PlanModifiers: []planmodifier.String{
+				stringplanmodifier.UseStateForUnknown(),
+			},
 		},
 	}
 }
 
 func (r *resourceImpl) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
-	var data resourceData
+	var state, data resourceData
 
-	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	cluster, err := r.client.KubernetesCluster.Get(data.Id.ValueString())
+	cluster, err := r.client.KubernetesCluster.Get(state.Id.ValueString())
 
 	if err != nil {
 		if err.(*client.ApiError).Code == 404 {
@@ -157,45 +177,45 @@ func (r *resourceImpl) Read(ctx context.Context, req resource.ReadRequest, resp 
 		}
 	}
 
-	populateResourceData(r.client, &data, cluster)
+	populateResourceData(r.client, &data, cluster, &state)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
 func (r *resourceImpl) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
-	var data resourceData
-	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
+	var plan, data resourceData
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
 	var create client.KubernetesClusterCreate
 
-	create.Name = data.Name.ValueString()
-	create.Version = data.Version.ValueString()
-	create.AutoUpdate = data.AutoUpdate.ValueBool()
-	create.AutoScaleEnabled = data.AutoScaleEnabled.ValueBool()
-	create.MinimalNodes = int(data.MinimalNodes.ValueInt64())
-	create.MaximalNodes = int(data.MaximalNodes.ValueInt64())
-	create.ControlPlaneCpuCores = int(data.ControlPlaneCpuCores.ValueInt64())
-	create.ControlPlaneMemoryGb = int(data.ControlPlaneMemoryGb.ValueInt64())
-	create.ControlPlaneStorageGb = int(data.ControlPlaneStorageGb.ValueInt64())
-	create.NodeCpuCores = int(data.NodeCpuCores.ValueInt64())
-	create.NodeMemoryGb = int(data.NodeMemoryGb.ValueInt64())
-	create.NodeStorageGb = int(data.NodeStorageGb.ValueInt64())
-	create.ComputeCluster = data.ComputeCluster.ValueString()
-	create.HighAvailableControlPlane = data.HighAvailableControlPlane.ValueBool()
-	create.CNI = data.CNI.ValueString()
-	create.Network = data.Network.ValueString()
+	create.Name = plan.Name.ValueString()
+	create.Version = plan.Version.ValueString()
+	create.AutoUpdate = plan.AutoUpdate.ValueBool()
+	create.AutoScaleEnabled = plan.AutoScaleEnabled.ValueBool()
+	create.MinimalNodes = int(plan.MinimalNodes.ValueInt64())
+	create.MaximalNodes = int(plan.MaximalNodes.ValueInt64())
+	create.ControlPlaneCpuCores = int(plan.ControlPlaneCpuCores.ValueInt64())
+	create.ControlPlaneMemoryGb = int(plan.ControlPlaneMemoryGb.ValueInt64())
+	create.ControlPlaneStorageGb = int(plan.ControlPlaneStorageGb.ValueInt64())
+	create.NodeCpuCores = int(plan.NodeCpuCores.ValueInt64())
+	create.NodeMemoryGb = int(plan.NodeMemoryGb.ValueInt64())
+	create.NodeStorageGb = int(plan.NodeStorageGb.ValueInt64())
+	create.ComputeCluster = plan.ComputeCluster.ValueString()
+	create.HighAvailableControlPlane = plan.HighAvailableControlPlane.ValueBool()
+	create.CNI = plan.CNI.ValueString()
+	create.Network = plan.Network.ValueString()
 
 	var createVips []string
-	for _, v := range data.Vips {
+	for _, v := range plan.Vips {
 		createVips = append(createVips, v.ValueString())
 	}
 	create.Vips = createVips
 
 	var createEndPoints []string
-	for _, v := range data.Endpoints {
+	for _, v := range plan.Endpoints {
 		createEndPoints = append(createEndPoints, v.ValueString())
 	}
 	create.Endpoints = createEndPoints
@@ -207,44 +227,44 @@ func (r *resourceImpl) Create(ctx context.Context, req resource.CreateRequest, r
 	}
 
 	createdCluster, err := r.client.KubernetesCluster.Get(createdKubernetesCluster.Id)
-	data.Id = types.StringValue(createdCluster.Id)
+	plan.Id = types.StringValue(createdCluster.Id)
 
 	if createdCluster == nil {
 		resp.Diagnostics.AddError("Kubernetes Cluster not found in list", fmt.Sprintln("Cluster is not found"))
 		return
 	}
 
-	if data.Id.IsNull() {
+	if plan.Id.IsNull() {
 		resp.Diagnostics.AddError("Invalid ID", fmt.Sprintln("An invalid (empty) id was returned after creation"))
 		return
 	}
 
-	err = waitForKubernetesClusterState(r.client, data.Id, "READY")
+	err = waitForKubernetesClusterState(r.client, plan.Id, "READY")
 	if err != nil {
 		resp.Diagnostics.AddError("Invalid ID", fmt.Sprintf("Error waiting for Kubernetes Cluster (%s) to become ready: %s", data.Id, err))
 		return
 	}
 
-	populateResourceData(r.client, &data, createdCluster)
+	populateResourceData(r.client, &data, createdCluster, &plan)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
 func (r *resourceImpl) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	var data, plan resourceData
-	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
+	var state, plan, data resourceData
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	_, err := r.client.KubernetesCluster.Get(data.Id.ValueString())
+	_, err := r.client.KubernetesCluster.Get(state.Id.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Invalid kubernetes cluster", fmt.Sprintf("Kubernetes Cluster with ID %s not found", data.Id))
 		return
 	}
 
-	if data.CNI != plan.CNI || data.Network != plan.Network || !reflect.DeepEqual(data.Vips, plan.Vips) || !reflect.DeepEqual(data.Endpoints, plan.Endpoints) {
+	if state.CNI != plan.CNI || state.Network != plan.Network || !reflect.DeepEqual(state.Vips, plan.Vips) || !reflect.DeepEqual(data.Endpoints, plan.Endpoints) {
 		resp.Diagnostics.AddError("Invalid updated fields", fmt.Sprintf("Fields cni,network,vips,endpoints cannot be updated after creation"))
 		return
 	}
@@ -265,15 +285,15 @@ func (r *resourceImpl) Update(ctx context.Context, req resource.UpdateRequest, r
 	update.ComputeCluster = plan.ComputeCluster.ValueString()
 	update.HighAvailableControlPlane = plan.HighAvailableControlPlane.ValueBool()
 
-	log.Printf("Updating cluster %s", data.Id.ValueString())
-	err = r.client.KubernetesCluster.Update(data.Id.ValueString(), update)
+	log.Printf("Updating cluster %s", state.Id.ValueString())
+	err = r.client.KubernetesCluster.Update(state.Id.ValueString(), update)
 
 	if err != nil {
 		resp.Diagnostics.AddError("Error while updating Kubernetes cluster", err.Error())
 		return
 	}
 
-	err = waitForKubernetesClusterState(r.client, data.Id, "READY")
+	err = waitForKubernetesClusterState(r.client, state.Id, "READY")
 	if err != nil {
 		resp.Diagnostics.AddError("Error while waiting for cluster to become ready", err.Error())
 		return
@@ -281,12 +301,12 @@ func (r *resourceImpl) Update(ctx context.Context, req resource.UpdateRequest, r
 
 	var updatedCluster *client.KubernetesClusterExt
 
-	updatedCluster, err = r.client.KubernetesCluster.Get(data.Id.ValueString())
+	updatedCluster, err = r.client.KubernetesCluster.Get(state.Id.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Kubernetes Cluster not found", fmt.Sprintln("Kubernetes Cluster is not found after matched in list"))
 	}
 
-	populateResourceData(r.client, &data, updatedCluster)
+	populateResourceData(r.client, &data, updatedCluster, &plan)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 
@@ -315,7 +335,7 @@ func (r *resourceImpl) ImportState(ctx context.Context, req resource.ImportState
 
 	var cluster, _ = r.client.KubernetesCluster.Get(req.ID)
 
-	populateResourceData(r.client, &data, cluster)
+	populateResourceData(r.client, &data, cluster, nil)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 
 }

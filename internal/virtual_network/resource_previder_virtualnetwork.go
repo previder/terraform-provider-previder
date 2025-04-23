@@ -108,7 +108,7 @@ func (r *resourceImpl) Create(ctx context.Context, req resource.CreateRequest, r
 		return
 	}
 
-	populateResourceData(ctx, &data, network)
+	populateResourceData(&data, network, &plan)
 
 	log.Printf("Searching for ID %s", data.Id.ValueString())
 
@@ -133,7 +133,7 @@ func (r *resourceImpl) Read(ctx context.Context, req resource.ReadRequest, resp 
 		return
 	}
 
-	populateResourceData(ctx, &data, network)
+	populateResourceData(&data, network, &state)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
@@ -172,7 +172,7 @@ func (r *resourceImpl) Update(ctx context.Context, req resource.UpdateRequest, r
 		return
 	}
 
-	populateResourceData(ctx, &data, vm)
+	populateResourceData(&data, vm, &plan)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
@@ -204,7 +204,7 @@ func (r *resourceImpl) ImportState(ctx context.Context, req resource.ImportState
 
 	var network, _ = r.client.VirtualNetwork.Get(req.ID)
 
-	populateResourceData(ctx, &data, network)
+	populateResourceData(&data, network, nil)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 
 }

@@ -153,10 +153,16 @@ func (r *resourceImpl) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 				Attributes: map[string]schema.Attribute{
 					"id": schema.StringAttribute{
 						Computed: true,
+						PlanModifiers: []planmodifier.String{
+							stringplanmodifier.UseStateForUnknown(),
+						},
 					},
 					"source": schema.StringAttribute{
 						Optional: true,
 						Computed: true,
+						PlanModifiers: []planmodifier.String{
+							stringplanmodifier.UseStateForUnknown(),
+						},
 					},
 					"port": schema.Int32Attribute{
 						Required: true,
@@ -169,6 +175,9 @@ func (r *resourceImpl) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 					},
 					"description": schema.StringAttribute{
 						Computed: true,
+						PlanModifiers: []planmodifier.String{
+							stringplanmodifier.UseStateForUnknown(),
+						},
 					},
 					"nat_destination": schema.StringAttribute{
 						Required: true,
@@ -183,14 +192,14 @@ func (r *resourceImpl) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 }
 
 func (r *resourceImpl) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
-	var data resourceData
+	var state, data resourceData
 
-	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	virtualFirewall, err := r.client.VirtualFirewall.Get(data.Id.ValueString())
+	virtualFirewall, err := r.client.VirtualFirewall.Get(state.Id.ValueString())
 
 	if err != nil {
 		if err.(*client.ApiError).Code == 404 {
@@ -205,19 +214,19 @@ func (r *resourceImpl) Read(ctx context.Context, req resource.ReadRequest, resp 
 		return
 	}
 
-	populateResourceData(&data, virtualFirewall, rules)
+	populateResourceData(&data, virtualFirewall, rules, &state)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
 func (r *resourceImpl) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
-	var data resourceData
-	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
+	var plan, data resourceData
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	err := r.validateNatRules(data.NatRules)
+	err := r.validateNatRules(plan.NatRules)
 	if err != nil {
 		resp.Diagnostics.AddError("Error creating Virtual Firewall", err.Error())
 		return
@@ -225,65 +234,65 @@ func (r *resourceImpl) Create(ctx context.Context, req resource.CreateRequest, r
 
 	var create client.VirtualFirewallCreate
 
-	create.Name = data.Name.ValueString()
-	create.Type = data.Type.ValueString()
-	create.Network = data.Network.ValueString()
+	create.Name = plan.Name.ValueString()
+	create.Type = plan.Type.ValueString()
+	create.Network = plan.Network.ValueString()
 
-	create.Group = data.Group.ValueString()
-	create.LanAddress = data.LanAddress.ValueString()
+	create.Group = plan.Group.ValueString()
+	create.LanAddress = plan.LanAddress.ValueString()
 	_, network, err := net.ParseCIDR(create.LanAddress)
 	if err != nil {
 		resp.Diagnostics.AddError("Error creating Virtual Firewall", "The Lan Address is not a valid CIDR")
 		return
 	}
-	create.DhcpEnabled = data.DhcpEnabled.ValueBool()
+	create.DhcpEnabled = plan.DhcpEnabled.ValueBool()
 	if create.DhcpEnabled {
-		create.DhcpRangeStart = net.ParseIP(data.DhcpRangeStart.ValueString())
+		create.DhcpRangeStart = net.ParseIP(plan.DhcpRangeStart.ValueString())
 		if !network.Contains(create.DhcpRangeStart) {
 			resp.Diagnostics.AddError("Error creating Virtual Firewall", fmt.Sprintf("The DHCP range start is not in the LAN subnet %v-%v", network.String(), create.DhcpRangeStart))
 			return
 		}
-		create.DhcpRangeEnd = net.ParseIP(data.DhcpRangeEnd.ValueString())
+		create.DhcpRangeEnd = net.ParseIP(plan.DhcpRangeEnd.ValueString())
 		if !network.Contains(create.DhcpRangeEnd) {
 			resp.Diagnostics.AddError("Error creating Virtual Firewall", "The DHCP range end is not in the LAN subnet")
 			return
 		}
-		create.LocalDomainName = data.LocalDomainName.ValueString()
+		create.LocalDomainName = plan.LocalDomainName.ValueString()
 	}
-	create.DnsEnabled = data.DnsEnabled.ValueBool()
+	create.DnsEnabled = plan.DnsEnabled.ValueBool()
 	if create.DnsEnabled {
 		var createNameservers []net.IP
 		var dataNameservers []types.String
-		data.Nameservers.ElementsAs(ctx, &dataNameservers, false)
+		plan.Nameservers.ElementsAs(ctx, &dataNameservers, false)
 		for _, nameserver := range dataNameservers {
 			createNameservers = append(createNameservers, net.ParseIP(nameserver.ValueString()))
 		}
 		create.Nameservers = createNameservers
 	}
 
-	create.TerminationProtected = data.TerminationProtected.ValueBool()
-	create.IcmpWanEnabled = data.IcmpWanEnabled.ValueBool()
-	create.IcmpLanEnabled = data.IcmpLanEnabled.ValueBool()
+	create.TerminationProtected = plan.TerminationProtected.ValueBool()
+	create.IcmpWanEnabled = plan.IcmpWanEnabled.ValueBool()
+	create.IcmpLanEnabled = plan.IcmpLanEnabled.ValueBool()
 
 	createdFirewallReference, err := r.client.VirtualFirewall.Create(create)
 	if err != nil {
 		resp.Diagnostics.AddError("Error creating Virtual Firewall", fmt.Sprintf("An error occured during the create of a Virtual Firewall: %s", err.Error()))
 		return
 	}
-	data.Id = types.StringValue(createdFirewallReference.Id)
+	plan.Id = types.StringValue(createdFirewallReference.Id)
 
-	if data.Id.IsNull() {
+	if plan.Id.IsNull() {
 		resp.Diagnostics.AddError("Invalid ID", fmt.Sprintln("An invalid (empty) id was returned after creation"))
 		return
 	}
 
-	err = waitForVirtualFirewallState(r.client, data.Id, "READY")
+	err = waitForVirtualFirewallState(r.client, plan.Id, "READY")
 	if err != nil {
 		resp.Diagnostics.AddError("Invalid ID", fmt.Sprintf("Error waiting for Virtual Firewall (%s) to become ready: %s", data.Id, err))
 		return
 	}
 
-	err = r.processNatRules(data.Id.ValueString(), data.NatRules, nil)
+	err = r.processNatRules(plan.Id.ValueString(), plan.NatRules, nil)
 	if err != nil {
 		resp.Diagnostics.AddError("Error while updating Virtual Firewall NAT rules", err.Error())
 		return
@@ -301,26 +310,26 @@ func (r *resourceImpl) Create(ctx context.Context, req resource.CreateRequest, r
 		return
 	}
 
-	populateResourceData(&data, createdFirewall, rules)
+	populateResourceData(&data, createdFirewall, rules, &plan)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
 func (r *resourceImpl) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	var data, plan resourceData
-	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
+	var state, plan, data resourceData
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	_, err := r.client.VirtualFirewall.Get(data.Id.ValueString())
+	_, err := r.client.VirtualFirewall.Get(state.Id.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Invalid Virtual Firewall", fmt.Sprintf("Virtual Firewall with ID %s not found", data.Id))
 		return
 	}
 
-	if data.Network != plan.Network {
+	if state.Network != plan.Network {
 		resp.Diagnostics.AddError("Invalid updated fields", fmt.Sprintf("Fields network cannot be updated after creation"))
 		return
 	}
@@ -371,21 +380,21 @@ func (r *resourceImpl) Update(ctx context.Context, req resource.UpdateRequest, r
 	update.IcmpWanEnabled = plan.IcmpWanEnabled.ValueBool()
 	update.IcmpLanEnabled = plan.IcmpLanEnabled.ValueBool()
 
-	log.Printf("Updating Virtual Firewall %s", data.Id.ValueString())
-	err = r.client.VirtualFirewall.Update(data.Id.ValueString(), update)
+	log.Printf("Updating Virtual Firewall %s", state.Id.ValueString())
+	err = r.client.VirtualFirewall.Update(state.Id.ValueString(), update)
 
 	if err != nil {
 		resp.Diagnostics.AddError("Error while updating Virtual Firewall", err.Error())
 		return
 	}
 
-	err = waitForVirtualFirewallState(r.client, data.Id, "READY")
+	err = waitForVirtualFirewallState(r.client, state.Id, "READY")
 	if err != nil {
 		resp.Diagnostics.AddError("Error while waiting for Virtual Firewall to become ready", err.Error())
 		return
 	}
 
-	err = r.processNatRules(data.Id.ValueString(), plan.NatRules, &data)
+	err = r.processNatRules(state.Id.ValueString(), plan.NatRules, &state)
 	if err != nil {
 		resp.Diagnostics.AddError("Error while updating Virtual Firewall NAT rules", err.Error())
 		return
@@ -393,7 +402,7 @@ func (r *resourceImpl) Update(ctx context.Context, req resource.UpdateRequest, r
 
 	var updatedFirewall *client.VirtualFirewallExt
 
-	updatedFirewall, err = r.client.VirtualFirewall.Get(data.Id.ValueString())
+	updatedFirewall, err = r.client.VirtualFirewall.Get(state.Id.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Virtual Firewall not found", fmt.Sprintln("Virtual Firewall is not found after matched in list"))
 	}
@@ -404,25 +413,25 @@ func (r *resourceImpl) Update(ctx context.Context, req resource.UpdateRequest, r
 		return
 	}
 
-	populateResourceData(&data, updatedFirewall, rules)
+	populateResourceData(&data, updatedFirewall, rules, &state)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 
 }
 
 func (r *resourceImpl) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
-	var data resourceData
+	var state resourceData
 
-	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	log.Printf("[INFO] Deleting Virtual Firewall: %s", data.Id)
+	log.Printf("[INFO] Deleting Virtual Firewall: %s", state.Id)
 
-	err := r.client.VirtualFirewall.Delete(data.Id.ValueString())
+	err := r.client.VirtualFirewall.Delete(state.Id.ValueString())
 
-	err = waitForVirtualFirewallDeleted(r.client, data.Id)
+	err = waitForVirtualFirewallDeleted(r.client, state.Id)
 	if err != nil {
 		resp.Diagnostics.AddError("Error deleting Virtual Firewall: %s", err.Error())
 	}
@@ -438,7 +447,7 @@ func (r *resourceImpl) ImportState(ctx context.Context, req resource.ImportState
 		return
 	}
 
-	populateResourceData(&data, virtualFirewall, rules)
+	populateResourceData(&data, virtualFirewall, rules, nil)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 
 }
@@ -470,7 +479,7 @@ func (r *resourceImpl) validateNatRules(dataNatRules map[string]resourceDataNatR
 func (r *resourceImpl) processNatRules(firewallId string, dataNatRules map[string]resourceDataNatRule, existingData *resourceData) error {
 	keys := sorters.SortMapKeys(dataNatRules)
 
-	for _,k := range keys {
+	for _, k := range keys {
 		rule := dataNatRules[k]
 		updateNatRule := client.VirtualFirewallNatRuleCreate{
 			Description:    k,

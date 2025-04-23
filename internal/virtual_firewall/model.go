@@ -6,6 +6,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/previder/previder-go-sdk/client"
+	"github.com/previder/terraform-provider-previder/internal/util"
 )
 
 type resourceData struct {
@@ -43,17 +44,29 @@ type resourceDataNatRule struct {
 	NatPort        types.Int32  `tfsdk:"nat_port"`
 }
 
-func populateResourceData(data *resourceData, in *client.VirtualFirewallExt, inNatRules *[]client.VirtualFirewallNatRule) diag.Diagnostics {
+func populateResourceData(data *resourceData, in *client.VirtualFirewallExt, inNatRules *[]client.VirtualFirewallNatRule, plan *resourceData) diag.Diagnostics {
 	var diags diag.Diagnostics
 	var newDiags diag.Diagnostics
+
+	if plan == nil {
+		plan = &resourceData{}
+	}
 
 	data.Id = types.StringValue(in.Id)
 	data.Name = types.StringValue(in.Name)
 	data.Type = types.StringValue(in.TypeLabel)
 	data.TypeName = types.StringValue(in.TypeName)
-	data.Group = types.StringValue(in.Group)
+	if util.IsValidObjectId(plan.Group.ValueString()) {
+		data.Group = types.StringValue(in.Group)
+	} else {
+		data.Group = types.StringValue(in.GroupName)
+	}
 	data.GroupName = types.StringValue(in.GroupName)
-	data.Network = types.StringValue(in.Network)
+	if util.IsValidObjectId(plan.Network.ValueString()) {
+		data.Network = types.StringValue(in.Network)
+	} else {
+		data.Network = types.StringValue(in.NetworkName)
+	}
 	data.NetworkName = types.StringValue(in.NetworkName)
 	data.LanAddress = types.StringValue(in.LanAddress)
 	var readWanAddress []attr.Value
