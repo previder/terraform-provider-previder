@@ -21,6 +21,7 @@ import (
 	"github.com/previder/terraform-provider-previder/internal/util"
 	"github.com/previder/terraform-provider-previder/internal/util/sorters"
 	"github.com/previder/terraform-provider-previder/internal/util/validators"
+	"log"
 	"strings"
 	"time"
 )
@@ -364,9 +365,14 @@ func (r *resourceImpl) Create(ctx context.Context, req resource.CreateRequest, r
 
 	data.UserData = plan.UserData
 
-	if len(vm.Template) == 0 {
-		// Guest ID or sourceVirtualMachine should stay poweredoff
-		err = waitForVirtualServerState(r.client, data.Id.ValueString(), client.VmStatePoweredOff)
+	if len(plan.Template.ValueString()) == 0 {
+		if len(plan.GuestId.ValueString()) == 0 {
+			// Clone
+			err = waitForVirtualServerState(r.client, data.Id.ValueString(), client.VmStatePoweredOff)
+		} else {
+			// Set guest ID
+			err = waitForVirtualServerState(r.client, data.Id.ValueString(), client.VmStatePoweredOn)
+		}
 	} else {
 		// Template should always power on
 		err = waitForVirtualServerState(r.client, data.Id.ValueString(), client.VmStatePoweredOn)
@@ -603,9 +609,13 @@ func (r *resourceImpl) Delete(ctx context.Context, req resource.DeleteRequest, r
 		return
 	}
 
-	r.client.Task.WaitFor(task.Id, 30*time.Minute)
-	// Wait 3 seconds for a network of type VXLAN to be really removed from the backend
-	time.Sleep(time.Second * 3)
+	_, err = r.client.Task.WaitFor(task.Id, 30*time.Minute)
+	if err != nil {
+		resp.Diagnostics.AddError("Virtual server not deleted", fmt.Sprintf("Virtual server is not deleted: %s", err.Error()))
+		return
+	}
+	// Wait 10 seconds
+	time.Sleep(time.Second * 10)
 
 }
 
@@ -637,7 +647,7 @@ func waitForVirtualServerState(client *client.PreviderClient, id string, target 
 
 	backoffOperation := func() error {
 		vm, err := client.VirtualServer.Get(id)
-
+		log.Printf("Waiting for virtual server to become ready. Current state: %v, Expected state: %v", vm.State, target)
 		if err != nil {
 			return errors.New(fmt.Sprintf("invalid Virtual Server id: %s", id))
 		}
