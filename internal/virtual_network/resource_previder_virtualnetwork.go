@@ -108,7 +108,7 @@ func (r *resourceImpl) Create(ctx context.Context, req resource.CreateRequest, r
 		return
 	}
 
-	populateResourceData(ctx, &data, network)
+	populateResourceData(&data, network, &plan)
 
 	log.Printf("Searching for ID %s", data.Id.ValueString())
 
@@ -133,7 +133,7 @@ func (r *resourceImpl) Read(ctx context.Context, req resource.ReadRequest, resp 
 		return
 	}
 
-	populateResourceData(ctx, &data, network)
+	populateResourceData(&data, network, &state)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
@@ -172,7 +172,7 @@ func (r *resourceImpl) Update(ctx context.Context, req resource.UpdateRequest, r
 		return
 	}
 
-	populateResourceData(ctx, &data, vm)
+	populateResourceData(&data, vm, &plan)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
@@ -183,20 +183,24 @@ func (r *resourceImpl) Delete(ctx context.Context, req resource.DeleteRequest, r
 		return
 	}
 
-	// Destroy the Virtual Server
+	// Destroy the Virtual Networks
 	task, err := r.client.VirtualNetwork.Delete(state.Id.ValueString())
 
-	// Handle remotely destroyed Virtual Servers
+	// Handle remotely destroyed Virtual Networks
 	if err != nil {
 		if strings.Contains(err.Error(), "404 Not Found") {
 			resp.Diagnostics.AddError("Virtual network not found", fmt.Sprintf("Virtual network is not found: %s", state.Name))
-
 		}
 		resp.Diagnostics.AddError("Virtual network not deleted", fmt.Sprintf("Virtual network is not deleted: %s %s", state.Name, err))
 		return
 	}
 
-	r.client.Task.WaitFor(task.Id, 30*time.Minute)
+	_, err = r.client.Task.WaitFor(task.Id, 30*time.Minute)
+	if err != nil {
+		resp.Diagnostics.AddError("Virtual network not deleted", fmt.Sprintf("Virtual network is not deleted: %s", err.Error()))
+		return
+	}
+
 }
 
 func (r *resourceImpl) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
@@ -204,7 +208,7 @@ func (r *resourceImpl) ImportState(ctx context.Context, req resource.ImportState
 
 	var network, _ = r.client.VirtualNetwork.Get(req.ID)
 
-	populateResourceData(ctx, &data, network)
+	populateResourceData(&data, network, nil)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 
 }

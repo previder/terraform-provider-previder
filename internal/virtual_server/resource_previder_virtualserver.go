@@ -21,6 +21,7 @@ import (
 	"github.com/previder/terraform-provider-previder/internal/util"
 	"github.com/previder/terraform-provider-previder/internal/util/sorters"
 	"github.com/previder/terraform-provider-previder/internal/util/validators"
+	"log"
 	"strings"
 	"time"
 )
@@ -102,6 +103,9 @@ func (r *resourceImpl) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 					},
 					"label": schema.StringAttribute{
 						Computed: true,
+						PlanModifiers: []planmodifier.String{
+							stringplanmodifier.UseStateForUnknown(),
+						},
 					},
 					"uuid": schema.StringAttribute{
 						Computed: true,
@@ -122,6 +126,9 @@ func (r *resourceImpl) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 				Attributes: map[string]schema.Attribute{
 					"id": schema.StringAttribute{
 						Computed: true,
+						PlanModifiers: []planmodifier.String{
+							stringplanmodifier.UseStateForUnknown(),
+						},
 					},
 					"network": schema.StringAttribute{
 						Required: true,
@@ -175,6 +182,9 @@ func (r *resourceImpl) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 					},
 					"label": schema.StringAttribute{
 						Computed: true,
+						PlanModifiers: []planmodifier.String{
+							stringplanmodifier.UseStateForUnknown(),
+						},
 					},
 				},
 			},
@@ -344,20 +354,25 @@ func (r *resourceImpl) Create(ctx context.Context, req resource.CreateRequest, r
 		return
 	}
 
-	populateResourceData(ctx, &data, vm)
+	populateResourceData(ctx, &data, vm, &plan)
 
 	data.Id = types.StringValue(task.VirtualMachine)
 	if plan.Source.IsNull() || plan.Source.ValueString() == "" {
-		data.Source = types.StringNull()
+		data.Source = types.StringValue("")
 	} else {
 		data.Source = plan.Source
 	}
 
 	data.UserData = plan.UserData
 
-	if len(vm.Template) == 0 {
-		// Guest ID or sourceVirtualMachine should stay poweredoff
-		err = waitForVirtualServerState(r.client, data.Id.ValueString(), client.VmStatePoweredOff)
+	if len(plan.Template.ValueString()) == 0 {
+		if len(plan.GuestId.ValueString()) == 0 {
+			// Clone
+			err = waitForVirtualServerState(r.client, data.Id.ValueString(), client.VmStatePoweredOff)
+		} else {
+			// Set guest ID
+			err = waitForVirtualServerState(r.client, data.Id.ValueString(), client.VmStatePoweredOn)
+		}
 	} else {
 		// Template should always power on
 		err = waitForVirtualServerState(r.client, data.Id.ValueString(), client.VmStatePoweredOn)
@@ -390,7 +405,10 @@ func (r *resourceImpl) Read(ctx context.Context, req resource.ReadRequest, resp 
 		return
 	}
 
-	populateResourceData(ctx, &data, vm)
+	populateResourceData(ctx, &data, vm, &state)
+	data.UserData = state.UserData
+	data.Source = state.Source
+
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 
 }
@@ -495,6 +513,7 @@ func (r *resourceImpl) Update(ctx context.Context, req resource.UpdateRequest, r
 			Label:     k,
 			Connected: plannedNetworkInterface.Connected.ValueBool(),
 		})
+		resp.Diagnostics.AddWarning("updating network interface for virtual server", fmt.Sprintf("Updating network interface with label %s", plannedNetworkInterface.Label.ValueString()))
 	}
 
 	for _, existingNetworkInterface := range state.NetworkInterfaces {
@@ -527,10 +546,13 @@ func (r *resourceImpl) Update(ctx context.Context, req resource.UpdateRequest, r
 		return
 	}
 
-	_, _ = r.client.Task.WaitFor(task.Id, 5*time.Minute)
+	virtualMachineTask, _ := r.client.Task.WaitFor(task.Id, 5*time.Minute)
+	if !virtualMachineTask.Success {
+		resp.Diagnostics.AddError("Virtual server could not be updated", fmt.Sprintf("Error while updating VirtualMachine (%s): %s", plan.Name.ValueString(), virtualMachineTask.ErrorMessage))
+	}
 	if machineHasShutdown == true {
 		task, err = r.client.VirtualServer.Control(state.Id.ValueString(), client.VmActionPowerOn)
-		_, err = r.client.Task.WaitFor(task.Id, 5*time.Minute)
+		virtualMachineTask, err = r.client.Task.WaitFor(task.Id, 5*time.Minute)
 		if err != nil {
 			return
 		}
@@ -548,9 +570,9 @@ func (r *resourceImpl) Update(ctx context.Context, req resource.UpdateRequest, r
 		return
 	}
 
-	populateResourceData(ctx, &data, vm)
+	populateResourceData(ctx, &data, vm, &plan)
 	if plan.Source.IsNull() || plan.Source.ValueString() == "" {
-		data.Source = types.StringNull()
+		data.Source = types.StringValue("")
 	} else {
 		data.Source = plan.Source
 	}
@@ -587,7 +609,13 @@ func (r *resourceImpl) Delete(ctx context.Context, req resource.DeleteRequest, r
 		return
 	}
 
-	r.client.Task.WaitFor(task.Id, 30*time.Minute)
+	_, err = r.client.Task.WaitFor(task.Id, 30*time.Minute)
+	if err != nil {
+		resp.Diagnostics.AddError("Virtual server not deleted", fmt.Sprintf("Virtual server is not deleted: %s", err.Error()))
+		return
+	}
+	// Wait 10 seconds
+	time.Sleep(time.Second * 10)
 
 }
 
@@ -596,7 +624,7 @@ func (r *resourceImpl) ImportState(ctx context.Context, req resource.ImportState
 
 	var vm, _ = r.client.VirtualServer.Get(req.ID)
 
-	populateResourceData(ctx, &data, vm)
+	populateResourceData(ctx, &data, vm, nil)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 
 }
@@ -619,7 +647,7 @@ func waitForVirtualServerState(client *client.PreviderClient, id string, target 
 
 	backoffOperation := func() error {
 		vm, err := client.VirtualServer.Get(id)
-
+		log.Printf("Waiting for virtual server to become ready. Current state: %v, Expected state: %v", vm.State, target)
 		if err != nil {
 			return errors.New(fmt.Sprintf("invalid Virtual Server id: %s", id))
 		}

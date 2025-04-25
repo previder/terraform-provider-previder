@@ -5,6 +5,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/previder/previder-go-sdk/client"
+	"github.com/previder/terraform-provider-previder/internal/util"
 	"net"
 )
 
@@ -49,24 +50,32 @@ type resourceDataNetworkInterface struct {
 	Type                types.String `tfsdk:"type"`
 }
 
-func populateResourceData(ctx context.Context, data *resourceData, in *client.VirtualMachineExt) diag.Diagnostics {
+func populateResourceData(ctx context.Context, data *resourceData, in *client.VirtualMachineExt, plan *resourceData) diag.Diagnostics {
 	var diags diag.Diagnostics
 	var newDiags diag.Diagnostics
 
+	if plan == nil {
+		plan = &resourceData{}
+	}
+
 	data.Id = types.StringValue(in.Id)
 	data.Name = types.StringValue(in.Name)
-	data.Group = types.StringValue(in.Group)
+	if util.IsValidObjectId(plan.Group.ValueString()) {
+		data.Group = types.StringValue(in.Group)
+	} else {
+		data.Group = types.StringValue(in.GroupName)
+	}
 	data.ComputeCluster = types.StringValue(in.ComputeCluster)
 	data.CpuCores = types.Int64Value(int64(in.CpuCores))
 	data.Memory = types.Int64Value(int64(in.Memory))
 
 	if len(in.Template) == 0 {
-		data.Template = types.StringNull()
+		data.Template = types.StringValue("")
 	} else {
 		data.Template = types.StringValue(in.Template)
 	}
 	if len(in.GuestId) == 0 {
-		data.GuestId = types.StringNull()
+		data.GuestId = types.StringValue("")
 	} else {
 		data.GuestId = types.StringValue(in.GuestId)
 	}
@@ -95,10 +104,19 @@ func populateResourceData(ctx context.Context, data *resourceData, in *client.Vi
 	for _, v := range in.NetworkInterfaces {
 		readNetworkInterface := resourceDataNetworkInterface{
 			Id:        types.StringValue(v.Id),
-			Network:   types.StringValue(v.Network),
 			Label:     types.StringValue(v.Label),
 			Type:      types.StringValue(v.Type),
 			Connected: types.BoolValue(v.Connected),
+		}
+
+		if plannedNetworkInterface, ok := plan.NetworkInterfaces[v.Label]; ok {
+			if util.IsValidObjectId(plannedNetworkInterface.Network.ValueString()) {
+				readNetworkInterface.Network = types.StringValue(v.Network)
+			} else {
+				readNetworkInterface.Network = types.StringValue(v.NetworkName)
+			}
+		} else {
+			readNetworkInterface.Network = types.StringValue(v.Network)
 		}
 
 		var readAssignedAddresses []types.String
@@ -112,6 +130,12 @@ func populateResourceData(ctx context.Context, data *resourceData, in *client.Vi
 					readNetworkInterface.IPv6Address = types.StringValue(ip.String())
 				}
 			}
+		}
+		if readNetworkInterface.IPv4Address.IsNull() {
+			readNetworkInterface.IPv4Address = types.StringValue("")
+		}
+		if readNetworkInterface.IPv6Address.IsNull() {
+			readNetworkInterface.IPv6Address = types.StringValue("")
 		}
 		readNetworkInterface.AssignedAddresses, _ = types.ListValueFrom(ctx, types.StringType, readAssignedAddresses)
 
