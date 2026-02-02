@@ -139,7 +139,7 @@ The following arguments are supported:
 - node_cpu_cores (Required)
 - node_memory_gb (Required)
 - node_storage_gb (Required)
-- compute_cluster (Required) - When set to a global cluster like "express", the nodes will automatically be spread over locations. When choosing a specific location, all nodes will run in that location.
+- compute_cluster (Required) - When set to a global cluster like "express", the nodes will automatically be spread over locations. When choosing a specific location, all nodes will run in that location., possible values are "express-pdc1", "express-pdc2" and so on.
 - high_available_control_plane (Optional) - when set to true, 3 control plane nodes will be deployed instead of 1
 
 ### previder_virtual_firewall
