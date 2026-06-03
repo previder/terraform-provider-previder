@@ -9,7 +9,7 @@ require (
 	github.com/hashicorp/terraform-plugin-go v0.31.0
 	github.com/hashicorp/terraform-plugin-log v0.10.0
 	github.com/hashicorp/terraform-plugin-mux v0.23.1
-	github.com/previder/previder-go-sdk v1.5.1
+	github.com/previder/previder-go-sdk v1.5.2
 	go.mongodb.org/mongo-driver/v2 v2.6.0
 )
 
