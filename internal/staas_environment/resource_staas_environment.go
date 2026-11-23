@@ -335,16 +335,13 @@ func (r *resourceImpl) resolveClusterID(cluster string) (string, error) {
 		return cluster, nil
 	}
 
-	var clusters []struct {
-		Label string `json:"label"`
-		ID    string `json:"id"`
-	}
-	if err := r.client.Get("v2/storage/staas/cluster", &clusters, nil); err != nil {
+	clusters, err := r.client.STaaSClusterList()
+	if err != nil {
 		return "", fmt.Errorf("looking up STaaS cluster label %q: %w", cluster, err)
 	}
 	for _, candidate := range clusters {
-		if candidate.Label == cluster && util.IsValidObjectId(candidate.ID) {
-			return candidate.ID, nil
+		if candidate.Label == cluster && util.IsValidObjectId(candidate.Id) {
+			return candidate.Id, nil
 		}
 	}
 
