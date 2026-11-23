@@ -252,6 +252,17 @@ The following arguments are supported:
 
 The volume and network keys **must** be exact to the name of the object, or the warning that array elements have vanished or appeared will be thrown.
 
+#### STaaS cluster labels
+
+Use a label available to your configured Previder customer in the `cluster` argument.
+
+| Label | Display name |
+| --- | --- |
+| `backup_pdc1` | Backup Storage PDC1 |
+| `backup_pdc2` | Backup Storage PDC2 |
+| `production_pdc1` | Production PDC1 |
+| `production_pdc2` | Production PDC2 |
+
 ## Motivation
 
 As projects besides e.g. the Previder Portal, the development team at Previder develops and maintains multiple projects aiming to integrate the Previder IaaS environment.
