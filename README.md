@@ -211,7 +211,7 @@ The following arguments are supported:
 resource previder_staas_environment "my_test_environment" {
   name    = "MyTestEnv"
   type    = "NFS"
-  cluster = "5ff6d4cc02d0fc472c40bc17"
+  cluster = "production_pdc1"
   windows = true
   volumes = {
     "TofuVol1" = {
@@ -245,7 +245,7 @@ resource previder_staas_environment "my_test_environment" {
 The following arguments are supported:
 - name (Required)
 - type (Required) - only NFS is currently supported
-- cluster (Required) - ID of the STaaS cluster  
+- cluster (Required) - STaaS cluster ID or label, such as `production_pdc1` or `backup_pdc1`. The provider resolves labels through the Previder API when creating the environment.
 - windows (Required) - set windows specific flags on this STaaS environment. Default: true
 - volumes - (Required) - The volumes are always handled alphabetically!
 - networks - (Required) - The volumes are always handled alphabetically!

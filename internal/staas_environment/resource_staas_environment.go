@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
@@ -65,7 +66,8 @@ func (r *resourceImpl) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 			Required: true,
 		},
 		"cluster": schema.StringAttribute{
-			Required: true,
+			MarkdownDescription: "STaaS cluster ID or cluster label, for example `backup_pdc1`.",
+			Required:            true,
 		},
 		"state": schema.StringAttribute{
 			Computed: true,
@@ -212,11 +214,17 @@ func (r *resourceImpl) Create(ctx context.Context, req resource.CreateRequest, r
 		return
 	}
 
+	clusterID, err := r.resolveClusterID(plan.Cluster.ValueString())
+	if err != nil {
+		resp.Diagnostics.AddAttributeError(path.Root("cluster"), "Cannot resolve STaaS cluster", err.Error())
+		return
+	}
+
 	var create client.STaaSEnvironmentCreate
 
 	create.Name = plan.Name.ValueString()
 	create.Type = plan.Type.ValueString()
-	create.Cluster = plan.Cluster.ValueString()
+	create.Cluster = clusterID
 	create.Windows = plan.Windows.ValueBool()
 
 	createdEnvironmentReference, err := r.client.STaaSEnvironment.Create(create)
@@ -320,6 +328,27 @@ func (r *resourceImpl) Create(ctx context.Context, req resource.CreateRequest, r
 	populateResourceData(ctx, &plan, createdEnvironment)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
+}
+
+func (r *resourceImpl) resolveClusterID(cluster string) (string, error) {
+	if util.IsValidObjectId(cluster) {
+		return cluster, nil
+	}
+
+	var clusters []struct {
+		Label string `json:"label"`
+		ID    string `json:"id"`
+	}
+	if err := r.client.Get("v2/storage/staas/cluster", &clusters, nil); err != nil {
+		return "", fmt.Errorf("looking up STaaS cluster label %q: %w", cluster, err)
+	}
+	for _, candidate := range clusters {
+		if candidate.Label == cluster && util.IsValidObjectId(candidate.ID) {
+			return candidate.ID, nil
+		}
+	}
+
+	return "", fmt.Errorf("STaaS cluster label %q did not resolve to a cluster ID for the configured customer", cluster)
 }
 
 func (r *resourceImpl) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
