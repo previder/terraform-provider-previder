@@ -233,6 +233,22 @@ func (r *resourceImpl) ImportState(ctx context.Context, req resource.ImportState
 		return
 	}
 	populateResourceData(&data, network)
+
+	pools, err := r.client.VirtualNetwork.ListAddressPools(req.ID)
+	if err != nil {
+		resp.Diagnostics.AddError("Error importing address pools", fmt.Sprintf("Reading address pools for virtual network %s: %s", req.ID, err))
+		return
+	}
+	if len(*pools) > 0 {
+		data.AddressPools = make(map[string]resourceDataAddressPool, len(*pools))
+	}
+	for _, pool := range *pools {
+		if _, exists := data.AddressPools[pool.Id]; pool.Id == "" || exists {
+			resp.Diagnostics.AddError("Error importing address pools", fmt.Sprintf("Virtual network %s returned a missing or duplicate address pool ID %q.", req.ID, pool.Id))
+			return
+		}
+		data.AddressPools[pool.Id] = flattenAddressPool(pool, resourceDataAddressPool{})
+	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
