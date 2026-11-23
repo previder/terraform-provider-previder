@@ -1,37 +1,26 @@
 package virtual_network
 
 import (
-	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/previder/previder-go-sdk/client"
 	"github.com/previder/terraform-provider-previder/internal/util"
 )
 
 type resourceData struct {
-	Id    types.String `tfsdk:"id"`
-	Name  types.String `tfsdk:"name"`
-	Type  types.String `tfsdk:"type"`
-	Group types.String `tfsdk:"group"`
+	Id           types.String                       `tfsdk:"id"`
+	Name         types.String                       `tfsdk:"name"`
+	Type         types.String                       `tfsdk:"type"`
+	Group        types.String                       `tfsdk:"group"`
+	AddressPools map[string]resourceDataAddressPool `tfsdk:"address_pools"`
 }
 
-func populateResourceData(data *resourceData, in *client.VirtualNetwork, plan *resourceData) diag.Diagnostics {
-	var diags diag.Diagnostics
-	var newDiags diag.Diagnostics
-
-	if plan == nil {
-		plan = &resourceData{}
-	}
-
-	data.Id = types.StringValue(in.Id)
-	data.Name = types.StringValue(in.Name)
-	data.Type = types.StringValue(in.Type)
-	if util.IsValidObjectId(plan.Group.ValueString()) {
-		data.Group = types.StringValue(in.Group)
+func populateResourceData(data *resourceData, network *client.VirtualNetwork) {
+	data.Id = types.StringValue(network.Id)
+	data.Name = types.StringValue(network.Name)
+	data.Type = types.StringValue(network.Type)
+	if util.IsValidObjectId(data.Group.ValueString()) {
+		data.Group = types.StringValue(network.Group)
 	} else {
-		data.Group = types.StringValue(in.GroupName)
+		data.Group = types.StringValue(network.GroupName)
 	}
-
-	diags.Append(newDiags...)
-
-	return diags
 }

@@ -102,6 +102,7 @@ func (p *PreviderProvider) Resources(_ context.Context) []func() resource.Resour
 		virtual_network.NewResource,
 		virtual_firewall.NewResource,
 		kubernetes_cluster.NewResource,
+		kubernetes_cluster.NewSecureVaultResource,
 		staas_environment.NewResource,
 	}
 }
