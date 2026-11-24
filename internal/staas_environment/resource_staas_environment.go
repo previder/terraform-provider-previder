@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
@@ -65,7 +66,8 @@ func (r *resourceImpl) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 			Required: true,
 		},
 		"cluster": schema.StringAttribute{
-			Required: true,
+			MarkdownDescription: "STaaS cluster ID or cluster label, for example `backup_pdc1`.",
+			Required:            true,
 		},
 		"state": schema.StringAttribute{
 			Computed: true,
@@ -174,10 +176,13 @@ func (r *resourceImpl) Read(ctx context.Context, req resource.ReadRequest, resp 
 	environment, err := r.client.STaaSEnvironment.Get(data.Id.ValueString())
 
 	if err != nil {
-		if err.(*client.ApiError).Code == 404 {
+		var apiErr *client.ApiError
+		if errors.As(err, &apiErr) && apiErr.Code == 404 {
 			resp.State.RemoveResource(ctx)
 			return
 		}
+		resp.Diagnostics.AddError("Error reading STaaS environment", err.Error())
+		return
 	}
 
 	populateResourceData(ctx, &data, environment)
@@ -212,11 +217,17 @@ func (r *resourceImpl) Create(ctx context.Context, req resource.CreateRequest, r
 		return
 	}
 
+	clusterID, err := r.resolveClusterID(plan.Cluster.ValueString())
+	if err != nil {
+		resp.Diagnostics.AddAttributeError(path.Root("cluster"), "Cannot resolve STaaS cluster", err.Error())
+		return
+	}
+
 	var create client.STaaSEnvironmentCreate
 
 	create.Name = plan.Name.ValueString()
 	create.Type = plan.Type.ValueString()
-	create.Cluster = plan.Cluster.ValueString()
+	create.Cluster = clusterID
 	create.Windows = plan.Windows.ValueBool()
 
 	createdEnvironmentReference, err := r.client.STaaSEnvironment.Create(create)
@@ -322,6 +333,35 @@ func (r *resourceImpl) Create(ctx context.Context, req resource.CreateRequest, r
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
+type staaSCluster struct {
+	Label string `json:"label"`
+	Id    string `json:"id"`
+}
+
+func (r *resourceImpl) listClusters() ([]staaSCluster, error) {
+	var clusters []staaSCluster
+	err := r.client.Get("v2/storage/staas/cluster", &clusters, nil)
+	return clusters, err
+}
+
+func (r *resourceImpl) resolveClusterID(cluster string) (string, error) {
+	if util.IsValidObjectId(cluster) {
+		return cluster, nil
+	}
+
+	clusters, err := r.listClusters()
+	if err != nil {
+		return "", fmt.Errorf("looking up STaaS cluster label %q: %w", cluster, err)
+	}
+	for _, candidate := range clusters {
+		if candidate.Label == cluster && util.IsValidObjectId(candidate.Id) {
+			return candidate.Id, nil
+		}
+	}
+
+	return "", fmt.Errorf("STaaS cluster label %q did not resolve to a cluster ID for the configured customer", cluster)
+}
+
 func (r *resourceImpl) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
 	var state, plan resourceData
 	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
@@ -330,10 +370,22 @@ func (r *resourceImpl) Update(ctx context.Context, req resource.UpdateRequest, r
 		return
 	}
 
-	_, err := r.client.STaaSEnvironment.Get(state.Id.ValueString())
+	environment, err := r.client.STaaSEnvironment.Get(state.Id.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Invalid STaaS environment", fmt.Sprintf("STaaS environment with ID %s not found", plan.Id))
 		return
+	}
+
+	if plan.Cluster != state.Cluster {
+		clusterID, err := r.resolveClusterID(plan.Cluster.ValueString())
+		if err != nil {
+			resp.Diagnostics.AddAttributeError(path.Root("cluster"), "Cannot resolve STaaS cluster", err.Error())
+			return
+		}
+		if clusterID != environmentClusterID(environment) {
+			resp.Diagnostics.AddAttributeError(path.Root("cluster"), "Cannot change STaaS cluster", "An existing STaaS environment cannot be moved to another cluster in place.")
+			return
+		}
 	}
 
 	resp.Diagnostics.Append(r.checkNetworks(plan.Networks)...)
@@ -357,13 +409,19 @@ func (r *resourceImpl) Update(ctx context.Context, req resource.UpdateRequest, r
 	}
 
 	if plan.Name.ValueString() != state.Name.ValueString() || plan.Windows.ValueBool() != state.Windows.ValueBool() {
-		var update client.STaaSEnvironmentUpdate
-		update.Name = plan.Name.ValueString()
-		update.Windows = plan.Windows.ValueBool()
+		// The portal requires windows even when it is false. The SDK update
+		// type omits false values.
+		update := struct {
+			Name    string `json:"name"`
+			Windows bool   `json:"windows"`
+		}{
+			Name:    plan.Name.ValueString(),
+			Windows: plan.Windows.ValueBool(),
+		}
 
 		log.Printf("Updating environment %s", plan.Id.ValueString())
 
-		err = r.client.STaaSEnvironment.Update(plan.Id.ValueString(), update)
+		err = r.client.Put("v2/storage/staas/environment/"+plan.Id.ValueString(), update, nil)
 	}
 
 	keys := sorters.SortMapKeys(plan.Volumes)
@@ -599,18 +657,55 @@ func (r *resourceImpl) Delete(ctx context.Context, req resource.DeleteRequest, r
 	var deleteEnvironment client.STaaSEnvironmentDelete
 	deleteEnvironment.Force = true
 
-	err := r.client.STaaSEnvironment.Delete(data.Id.ValueString(), deleteEnvironment)
-
-	err = waitForSTaaSEnvironmentDeleted(r.client, data.Id)
-	if err != nil {
-		resp.Diagnostics.AddError("Error deleting STaaS environment: %s", err.Error())
+	if err := r.client.STaaSEnvironment.Delete(data.Id.ValueString(), deleteEnvironment); err != nil {
+		var apiErr *client.ApiError
+		if errors.As(err, &apiErr) && apiErr.Code == 404 {
+			return
+		}
+		resp.Diagnostics.AddError("Error deleting STaaS environment", err.Error())
+		return
 	}
+
+	if err := waitForSTaaSEnvironmentDeleted(ctx, r.client, data.Id); err != nil {
+		resp.Diagnostics.AddError("Error waiting for STaaS environment deletion", err.Error())
+	}
+}
+
+func environmentClusterID(environment *client.STaaSEnvironmentExt) string {
+	if environment.ClusterId != "" {
+		return environment.ClusterId
+	}
+	return environment.Cluster
 }
 
 func (r *resourceImpl) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
 	var data resourceData
 
-	var environment, _ = r.client.STaaSEnvironment.Get(req.ID)
+	environment, err := r.client.STaaSEnvironment.Get(req.ID)
+	if err != nil {
+		resp.Diagnostics.AddError("Error importing STaaS environment", err.Error())
+		return
+	}
+
+	clusterID := environmentClusterID(environment)
+	if !util.IsValidObjectId(clusterID) {
+		resp.Diagnostics.AddError("Cannot import STaaS cluster", "The environment response did not contain a valid cluster ID.")
+		return
+	}
+
+	clusters, err := r.listClusters()
+	if err != nil {
+		resp.Diagnostics.AddError("Error looking up STaaS clusters during import", err.Error())
+		return
+	}
+	data.Cluster = types.StringValue(clusterID)
+	for _, cluster := range clusters {
+		if cluster.Id == clusterID && cluster.Label != "" {
+			data.Cluster = types.StringValue(cluster.Label)
+			break
+		}
+	}
+	data.Type = types.StringValue(environment.Type)
 
 	populateResourceData(ctx, &data, environment)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
@@ -710,35 +805,21 @@ func contains(s []string, e string) bool {
 	return false
 }
 
-func waitForSTaaSEnvironmentDeleted(client *client.PreviderClient, id types.String) error {
-	backoffOperation := func() error {
-		cluster, err := client.STaaSEnvironment.Get(id.ValueString())
-		log.Printf("Fetching environment: %v", id)
+func waitForSTaaSEnvironmentDeleted(ctx context.Context, c *client.PreviderClient, id types.String) error {
+	check := func() error {
+		environment, err := c.STaaSEnvironment.Get(id.ValueString())
 		if err != nil {
-			log.Printf("Error while fetching a environment")
-			if strings.Contains(err.Error(), "404") &&
-				strings.Contains(err.Error(), "not found") {
+			var apiErr *client.ApiError
+			if errors.As(err, &apiErr) && apiErr.Code == 404 {
 				return nil
 			}
-			log.Printf("Environment still exists, but got an error: %v", err)
-			return errors.New(fmt.Sprintf("environment still exists, but got an error: %s", id.ValueString()))
+			return fmt.Errorf("checking deletion of STaaS environment %s: %w", id.ValueString(), err)
 		}
-		if cluster.State == "FORCE_REMOVAL" {
-			log.Printf("Waiting for environment to be gone: %v", cluster.State)
-			return errors.New(fmt.Sprintf("Waiting for environment to be gone: %s", id.ValueString()))
-		}
-		return nil
-	}
-	log.Printf("Waiting for environment deletion: %v", id)
-	// Max waiting time is 20 mins
-	backoffConfig := backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second*10), 120)
-
-	err := backoff.Retry(backoffOperation, backoffConfig)
-	if err != nil {
-		return err
+		return fmt.Errorf("STaaS environment %s still exists in state %s", id.ValueString(), environment.State)
 	}
 
-	return nil
+	retries := backoff.WithMaxRetries(backoff.NewConstantBackOff(10*time.Second), 120)
+	return backoff.Retry(check, backoff.WithContext(retries, ctx))
 }
 
 func waitForSTaaSNetworkDeleted(client *client.PreviderClient, id types.String, networkId types.String) error {
