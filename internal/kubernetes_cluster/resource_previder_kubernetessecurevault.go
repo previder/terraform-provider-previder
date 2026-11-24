@@ -90,13 +90,13 @@ func (r *secureVaultResourceImpl) Create(ctx context.Context, req resource.Creat
 		return
 	}
 
-	create := client.KubernetesSecureVaultCreate{
+	create := client.SecureVaultCreate{
 		Name:                 plan.Name.ValueString(),
 		Group:                plan.Group.ValueString(),
 		TerminationProtected: plan.TerminationProtected.ValueBool(),
 	}
 
-	response, err := r.client.KubernetesCluster.CreateSecureVault(create)
+	response, err := r.client.SecureVault.Create(create)
 	if err != nil {
 		resp.Diagnostics.AddError("Error creating secure vault", fmt.Sprintf("Error while creating secure vault (%s): %s", plan.Name.ValueString(), err))
 		return
@@ -116,7 +116,7 @@ func (r *secureVaultResourceImpl) Create(ctx context.Context, req resource.Creat
 		resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 	}()
 
-	vault, err := r.client.KubernetesCluster.GetSecureVault(response.Id)
+	vault, err := r.client.SecureVault.Get(response.Id)
 	if err != nil {
 		resp.Diagnostics.AddError("Secure vault not found after creation", fmt.Sprintf("Error while getting secure vault %s: %s", response.Id, err))
 		return
@@ -133,7 +133,7 @@ func (r *secureVaultResourceImpl) Read(ctx context.Context, req resource.ReadReq
 		return
 	}
 
-	vault, err := r.client.KubernetesCluster.GetSecureVault(data.Id.ValueString())
+	vault, err := r.client.SecureVault.Get(data.Id.ValueString())
 	if err != nil {
 		var apiErr *client.ApiError
 		if errors.As(err, &apiErr) && apiErr.Code == 404 {
@@ -158,19 +158,19 @@ func (r *secureVaultResourceImpl) Update(ctx context.Context, req resource.Updat
 		return
 	}
 
-	update := client.KubernetesSecureVaultCreate{
+	update := client.SecureVaultCreate{
 		Name:                 plan.Name.ValueString(),
 		Group:                plan.Group.ValueString(),
 		TerminationProtected: plan.TerminationProtected.ValueBool(),
 	}
 
-	err := r.client.KubernetesCluster.UpdateSecureVault(state.Id.ValueString(), update)
+	err := r.client.SecureVault.Update(state.Id.ValueString(), update)
 	if err != nil {
 		resp.Diagnostics.AddError("Error updating secure vault", fmt.Sprintf("Error while updating secure vault %s: %s", state.Id, err))
 		return
 	}
 
-	vault, err := r.client.KubernetesCluster.GetSecureVault(state.Id.ValueString())
+	vault, err := r.client.SecureVault.Get(state.Id.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Secure vault not found after update", fmt.Sprintf("Error while getting secure vault %s: %s", state.Id, err))
 		return
@@ -191,7 +191,7 @@ func (r *secureVaultResourceImpl) Delete(ctx context.Context, req resource.Delet
 		return
 	}
 
-	err := r.client.KubernetesCluster.DeleteSecureVault(state.Id.ValueString())
+	err := r.client.SecureVault.Delete(state.Id.ValueString())
 	if err != nil {
 		var apiErr *client.ApiError
 		if !(errors.As(err, &apiErr) && apiErr.Code == 404) {
@@ -203,7 +203,7 @@ func (r *secureVaultResourceImpl) Delete(ctx context.Context, req resource.Delet
 func (r *secureVaultResourceImpl) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
 	var data secureVaultResourceData
 
-	vault, err := r.client.KubernetesCluster.GetSecureVault(req.ID)
+	vault, err := r.client.SecureVault.Get(req.ID)
 	if err != nil {
 		resp.Diagnostics.AddError("Error reading secure vault", fmt.Sprintf("Error while getting secure vault %s: %s", req.ID, err))
 		return

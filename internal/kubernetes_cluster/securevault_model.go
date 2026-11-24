@@ -15,7 +15,7 @@ type secureVaultResourceData struct {
 	Token                types.String `tfsdk:"token"`
 }
 
-func populateSecureVaultData(data *secureVaultResourceData, in *client.KubernetesSecureVaultExt) {
+func populateSecureVaultData(data *secureVaultResourceData, in *client.SecureVaultExt) {
 	data.Id = types.StringValue(in.Id)
 	data.Name = types.StringValue(in.Name)
 	data.State = types.StringValue(in.State)
