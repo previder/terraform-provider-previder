@@ -5,7 +5,6 @@ The provider needs to be configured with an API token that will be provided by P
 
 Before using this README, make sure that you have installed the Previder Provider using INSTALL.
 
-
 ## Important notice
 
 This Terraform/OpenTofu provider is provided to you "as-is" and without warranty of any kind, express, implied or otherwise, including without limitation, any warranty of fitness for a particular purpose.
@@ -183,13 +182,16 @@ The following arguments are supported:
 - compute_cluster (Required) - When set to a global cluster like "express", the nodes will automatically be spread over locations. When choosing a specific location, all nodes will run in that location., possible values are "express-pdc1", "express-pdc2" and so on.
 - high_available_control_plane (Optional) - when set to true, 3 control plane nodes will be deployed instead of 1
 
-### previder_kubernetes_secure_vault
+### previder_secure_vault
+
+Terraform manages Secure Vault as a standalone resource with its own lifecycle. You can create a vault without provisioning a Kubernetes cluster or supplying a cluster ID.
+
 
 #### Example usage
-```
-resource "previder_kubernetes_secure_vault" "secrets" {
-  name = "cluster-secrets"
-  group = "dev-team"
+```hcl
+resource "previder_secure_vault" "secrets" {
+  name                  = "team-secrets"
+  group                 = "dev-team"
   termination_protected = true
 }
 ```
@@ -333,12 +335,12 @@ output "address_pool_id" {
 
 output "secure_vault_id" {
   description = "ID of the created secure vault"
-  value       = previder_kubernetes_secure_vault.secrets.id
+  value       = previder_secure_vault.secrets.id
 }
 
 output "secure_vault_token" {
   description = "One-time token to create new ReadOnly or ReadWrite tokens"
-  value       = previder_kubernetes_secure_vault.secrets.token
+  value       = previder_secure_vault.secrets.token
   sensitive   = true
 }
 ```

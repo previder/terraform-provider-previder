@@ -1,4 +1,4 @@
-package kubernetes_cluster
+package secure_vault
 
 import (
 	"context"
@@ -16,7 +16,7 @@ import (
 	"github.com/previder/terraform-provider-previder/internal/util"
 )
 
-const SecureVaultResourceType = "previder_kubernetes_secure_vault"
+const SecureVaultResourceType = "previder_secure_vault"
 
 var _ resource.Resource = (*secureVaultResourceImpl)(nil)
 var _ resource.ResourceWithConfigure = (*secureVaultResourceImpl)(nil)
@@ -30,7 +30,7 @@ func (r *secureVaultResourceImpl) Metadata(_ context.Context, _ resource.Metadat
 	resp.TypeName = SecureVaultResourceType
 }
 
-func NewSecureVaultResource() resource.Resource {
+func NewResource() resource.Resource {
 	return &secureVaultResourceImpl{}
 }
 

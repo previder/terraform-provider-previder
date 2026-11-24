@@ -1,4 +1,4 @@
-package kubernetes_cluster
+package secure_vault
 
 import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
