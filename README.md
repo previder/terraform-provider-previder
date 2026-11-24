@@ -5,7 +5,6 @@ The provider needs to be configured with an API token that will be provided by P
 
 Before using this README, make sure that you have installed the Previder Provider using INSTALL.
 
-
 ## Important notice
 
 This Terraform/OpenTofu provider is provided to you "as-is" and without warranty of any kind, express, implied or otherwise, including without limitation, any warranty of fitness for a particular purpose.
@@ -37,16 +36,57 @@ The following arguments are supported:
 ### previder_virtual_network
 
 #### Example usage
+
+A virtual network with an IPv4 and an IPv6 address pool:
 ```
 resource "previder_virtual_network" "testlab-net" {
-    name = "testlab-net"
-    type = "VLAN"
+  name  = "testlab-net"
+  type  = "VLAN"
+  group = "dev-team"
+
+  address_pools = {
+    "ipv4" = {
+      start       = "192.168.10.10"
+      end         = "192.168.10.200"
+      mask        = "255.255.255.0"
+      gateway     = "192.168.10.1"
+      type        = "IPV4"
+      nameservers = ["80.65.96.50", "62.165.127.222"]
+    }
+    "ipv6" = {
+      start = "2001:db8:128::10"
+      end   = "2001:db8:128::ffff"
+      mask  = "ffff:ffff:ffff:ffff::"
+      type  = "IPV6"
+    }
+  }
 }
 ```
+
+The keys of `address_pools` (`ipv4`, `ipv6`, ...) are stable Terraform-only
+identifiers and are **not** sent to the Previder API. Add a key to create a
+pool, remove one to delete it, and change its values to update it.
+During refresh and updates, Terraform manages the pools it created under these
+keys. Importing a network leaves its existing pools under separate management.
+
 #### Argument reference
 
 The following arguments are supported:
-- name : (Required) The network name
+- name - (Required) The network name
+- type - (Required) The network type (e.g. `VLAN`). Changing this forces replacement.
+- group - (Optional) ID or name of the group this network belongs to
+- address_pools - (Optional) Map of address pools on the network. The map keys are Terraform-only identifiers and are not sent to the API. Each pool supports:
+  - start - (Required) First address of the pool
+  - end - (Required) Last address of the pool
+  - mask - (Required) Network mask of the pool (e.g. `255.255.255.0` for IPv4, `ffff:ffff:ffff:ffff::` for IPv6)
+  - gateway - (Optional) Gateway address of the pool
+  - type - (Required) Address type, either `IPV4` or `IPV6`
+  - nameservers - (Optional) List of name servers assigned to the pool
+
+Read-only attributes (exposed as outputs, see [Example outputs](#example-outputs)):
+- id - The ID of the virtual network
+- address_pools.<key>.id - The ID of each address pool
+
 
 ### previder_virtual_server
 #### Example usage 1
@@ -141,6 +181,32 @@ The following arguments are supported:
 - node_storage_gb (Required)
 - compute_cluster (Required) - When set to a global cluster like "express", the nodes will automatically be spread over locations. When choosing a specific location, all nodes will run in that location., possible values are "express-pdc1", "express-pdc2" and so on.
 - high_available_control_plane (Optional) - when set to true, 3 control plane nodes will be deployed instead of 1
+
+### previder_secure_vault
+
+Terraform manages Secure Vault as a standalone resource with its own lifecycle. You can create a vault without provisioning a Kubernetes cluster or supplying a cluster ID.
+
+
+#### Example usage
+```hcl
+resource "previder_secure_vault" "secrets" {
+  name                  = "team-secrets"
+  group                 = "dev-team"
+  termination_protected = true
+}
+```
+
+#### Argument reference
+
+The following arguments are supported:
+- name - (Required) The name of the secure vault
+- group - (Optional) ID or name of the group this secure vault belongs to
+- termination_protected - (Optional) Protect the secure vault from being deleted. Default: `false`
+
+Read-only attributes (exposed as outputs, see [Example outputs](#example-outputs)):
+- id - The ID of the secure vault
+- state - The current state of the secure vault (e.g. `READY`)
+- token - (Sensitive) Bootstrap token to create new ReadOnly or ReadWrite tokens. The API returns it at creation, and Terraform stores it in state.
 
 ### previder_virtual_firewall
 #### Example usage
@@ -251,6 +317,37 @@ The following arguments are supported:
 - networks - (Required) - The volumes are always handled alphabetically!
 
 The volume and network keys **must** be exact to the name of the object, or the warning that array elements have vanished or appeared will be thrown.
+
+## Example outputs
+
+Computed attributes such as `id`, `state` and the secure vault `token` are only
+known after apply, so they are usually exposed as outputs:
+```
+output "virtual_network_id" {
+  description = "ID of the created virtual network"
+  value       = previder_virtual_network.testlab-net.id
+}
+
+output "address_pool_id" {
+  description = "ID of the created IPv4 address pool"
+  value       = previder_virtual_network.testlab-net.address_pools.ipv4.id
+}
+
+output "secure_vault_id" {
+  description = "ID of the created secure vault"
+  value       = previder_secure_vault.secrets.id
+}
+
+output "secure_vault_token" {
+  description = "One-time token to create new ReadOnly or ReadWrite tokens"
+  value       = previder_secure_vault.secrets.token
+  sensitive   = true
+}
+```
+
+> The API returns the bootstrap token only during creation. Terraform retains it
+> in state, and `terraform output secure_vault_token` displays it when that
+> output is configured. Restrict access to state and state backups.
 
 ## Motivation
 

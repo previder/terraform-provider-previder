@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
+	"time"
+
 	"github.com/cenkalti/backoff/v4"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -13,9 +16,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/previder/previder-go-sdk/client"
 	"github.com/previder/terraform-provider-previder/internal/util"
-	"log"
-	"strings"
-	"time"
 )
 
 const ResourceType = "previder_virtual_network"
@@ -49,7 +49,7 @@ func (r *resourceImpl) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 
 	resp.Schema.Attributes = map[string]schema.Attribute{
 		"id": schema.StringAttribute{
-			MarkdownDescription: "ID of the virtual server",
+			MarkdownDescription: "ID of the virtual network",
 			Computed:            true,
 			PlanModifiers: []planmodifier.String{
 				stringplanmodifier.UseStateForUnknown(),
@@ -71,109 +71,130 @@ func (r *resourceImpl) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 				stringplanmodifier.UseStateForUnknown(),
 			},
 		},
+		"address_pools": schema.MapNestedAttribute{
+			MarkdownDescription: "Map of address pools on the virtual network. The map keys are Terraform-only stable identifiers and are not sent to the Previder API",
+			Optional:            true,
+			NestedObject: schema.NestedAttributeObject{
+				Attributes: addressPoolSchemaAttributes(),
+			},
+		},
 	}
 }
 
 func (r *resourceImpl) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
-	var create client.VirtualNetworkUpdate
-	var plan, data resourceData
-
+	var plan resourceData
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
-	create.Name = plan.Name.ValueString()
-	create.Type = plan.Type.ValueString()
-	create.Group = plan.Group.ValueString()
-
-	task, err := r.client.VirtualNetwork.Create(&create)
-	if err != nil {
-		resp.Diagnostics.AddError("Error while creating Virtual Server", fmt.Sprintf("Error while creating Virtual Network (%s): %s", plan.Name.ValueString(), err))
+	if err := validateAddressPools(plan.AddressPools); err != nil {
+		resp.Diagnostics.AddError("Error creating virtual network", err.Error())
 		return
 	}
 
-	_, _ = r.client.Task.WaitFor(task.Id, 5*time.Minute)
-
-	network, err := r.client.VirtualNetwork.Get(task.VirtualNetwork)
+	task, err := r.client.VirtualNetwork.Create(&client.VirtualNetworkUpdate{
+		Name:  plan.Name.ValueString(),
+		Type:  plan.Type.ValueString(),
+		Group: plan.Group.ValueString(),
+	})
 	if err != nil {
-		resp.Diagnostics.AddError("Virtual Network could not be found after creation", fmt.Sprintf("Error while creating Virtual Network (%s): %s", plan.Name.ValueString(), err))
+		resp.Diagnostics.AddError("Error creating virtual network", fmt.Sprintf("Creating virtual network %s: %s", plan.Name, err))
 		return
 	}
 
+	data := plan
 	data.Id = types.StringValue(task.VirtualNetwork)
-	err = waitForVirtualNetworkState(*r.client, data.Id.ValueString(), client.VirtualNetworkStateReady)
-	if err != nil {
-		resp.Diagnostics.AddError("Invalid ID", fmt.Sprintf("Error waiting for Virtual Network (%s) to become ready: %s", data.Id, err))
+	data.AddressPools = nil
+	if data.Group.IsUnknown() {
+		data.Group = types.StringNull()
+	}
+	defer func() {
+		resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+	}()
+
+	if _, err := r.client.Task.WaitFor(task.Id, 5*time.Minute); err != nil {
+		resp.Diagnostics.AddError("Error creating virtual network", fmt.Sprintf("Waiting for virtual network %s: %s", data.Id, err))
 		return
 	}
+	network, err := waitForVirtualNetworkReady(ctx, r.client.VirtualNetwork, data.Id.ValueString())
+	if err != nil {
+		resp.Diagnostics.AddError("Error creating virtual network", fmt.Sprintf("Waiting for virtual network %s to become ready: %s", data.Id, err))
+		return
+	}
+	populateResourceData(&data, network)
 
-	populateResourceData(&data, network, &plan)
-
-	log.Printf("Searching for ID %s", data.Id.ValueString())
-
-	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+	data.AddressPools, err = syncAddressPools(r.client.VirtualNetwork, data.Id.ValueString(), plan.AddressPools, nil)
+	if err != nil {
+		resp.Diagnostics.AddError("Error creating address pools", fmt.Sprintf("Virtual network %s: %s", data.Id, err))
+	}
 }
 
 func (r *resourceImpl) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
-	var state, data resourceData
-	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
+	var data resourceData
+	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	// Retrieve the Virtual Network properties for updating the state
-	network, err := r.client.VirtualNetwork.Get(state.Id.ValueString())
 
+	network, err := r.client.VirtualNetwork.Get(data.Id.ValueString())
 	if err != nil {
-		if err.(*client.ApiError).Code == 404 {
-			resp.Diagnostics.AddError("Virtual network not found", fmt.Sprintf("Error while getting Virtual network: %s", data.Id))
+		var apiErr *client.ApiError
+		if errors.As(err, &apiErr) && apiErr.Code == 404 {
+			resp.State.RemoveResource(ctx)
 			return
 		}
-		resp.Diagnostics.AddError("Invalid ID", fmt.Sprintf("Error while fetching Virtual Network (%s): %s", data.Id, err))
+		resp.Diagnostics.AddError("Error reading virtual network", fmt.Sprintf("Reading virtual network %s: %s", data.Id, err))
 		return
 	}
 
-	populateResourceData(&data, network, &state)
+	data.AddressPools, err = refreshAddressPools(r.client.VirtualNetwork, data.Id.ValueString(), data.AddressPools)
+	if err != nil {
+		resp.Diagnostics.AddError("Error reading address pools", fmt.Sprintf("Virtual network %s: %s", data.Id, err))
+		return
+	}
+	populateResourceData(&data, network)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
 func (r *resourceImpl) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	var state, plan, data resourceData
-	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
+	var prior, plan resourceData
+	resp.Diagnostics.Append(req.State.Get(ctx, &prior)...)
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
-	var vm *client.VirtualNetwork
-	update := client.VirtualNetworkUpdate{}
-
-	vm, err := r.client.VirtualNetwork.Get(state.Id.ValueString())
-
-	if err != nil {
-		resp.Diagnostics.AddError("Virtual server not found", fmt.Sprintf("Error while getting Virtual Server: %s", state.Id))
+	if err := validateAddressPools(plan.AddressPools); err != nil {
+		resp.Diagnostics.AddError("Error updating virtual network", err.Error())
 		return
 	}
 
-	update.Name = plan.Name.ValueString()
-	update.Type = plan.Type.ValueString()
-
-	task, err := r.client.VirtualNetwork.Update(state.Id.ValueString(), &update)
-
+	networkID := prior.Id.ValueString()
+	task, err := r.client.VirtualNetwork.Update(networkID, &client.VirtualNetworkUpdate{
+		Name: plan.Name.ValueString(),
+		Type: plan.Type.ValueString(),
+	})
 	if err != nil {
-		resp.Diagnostics.AddError("Error updating Virtual Network", fmt.Sprintf("Virtual Network has not been updated %s: %s", state.Name, err.Error()))
+		resp.Diagnostics.AddError("Error updating virtual network", fmt.Sprintf("Updating virtual network %s: %s", networkID, err))
 		return
 	}
-	_, _ = r.client.Task.WaitFor(task.Id, 5*time.Minute)
-
-	vm, err = r.client.VirtualNetwork.Get(state.Id.ValueString())
-	if err != nil {
-		resp.Diagnostics.AddError("Virtual Network could not be found after update", fmt.Sprintf("Error while updating Virtual Network (%s): %s", plan.Name.ValueString(), err))
+	if _, err := r.client.Task.WaitFor(task.Id, 5*time.Minute); err != nil {
+		resp.Diagnostics.AddError("Error updating virtual network", fmt.Sprintf("Waiting for virtual network %s: %s", networkID, err))
 		return
 	}
 
-	populateResourceData(&data, vm, &plan)
+	network, err := r.client.VirtualNetwork.Get(networkID)
+	if err != nil {
+		resp.Diagnostics.AddError("Error reading virtual network after update", fmt.Sprintf("Reading virtual network %s: %s", networkID, err))
+		return
+	}
+
+	data := plan
+	populateResourceData(&data, network)
+	data.AddressPools, err = syncAddressPools(r.client.VirtualNetwork, networkID, plan.AddressPools, prior.AddressPools)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+	if err != nil {
+		resp.Diagnostics.AddError("Error updating address pools", fmt.Sprintf("Virtual network %s: %s", networkID, err))
+	}
 }
 
 func (r *resourceImpl) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
@@ -206,33 +227,41 @@ func (r *resourceImpl) Delete(ctx context.Context, req resource.DeleteRequest, r
 func (r *resourceImpl) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
 	var data resourceData
 
-	var network, _ = r.client.VirtualNetwork.Get(req.ID)
+	network, err := r.client.VirtualNetwork.Get(req.ID)
+	if err != nil {
+		resp.Diagnostics.AddError("Error importing virtual network", fmt.Sprintf("Reading virtual network %s: %s", req.ID, err))
+		return
+	}
+	populateResourceData(&data, network)
 
-	populateResourceData(&data, network, nil)
+	pools, err := r.client.VirtualNetwork.ListAddressPools(req.ID)
+	if err != nil {
+		resp.Diagnostics.AddError("Error importing address pools", fmt.Sprintf("Reading address pools for virtual network %s: %s", req.ID, err))
+		return
+	}
+	if len(*pools) > 0 {
+		data.AddressPools = make(map[string]resourceDataAddressPool, len(*pools))
+	}
+	for _, pool := range *pools {
+		if _, exists := data.AddressPools[pool.Id]; pool.Id == "" || exists {
+			resp.Diagnostics.AddError("Error importing address pools", fmt.Sprintf("Virtual network %s returned a missing or duplicate address pool ID %q.", req.ID, pool.Id))
+			return
+		}
+		data.AddressPools[pool.Id] = flattenAddressPool(pool, resourceDataAddressPool{})
+	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
-
 }
 
-func waitForVirtualNetworkState(client client.PreviderClient, id string, target string) error {
-
-	backoffOperation := func() error {
-		network, err := client.VirtualNetwork.Get(id)
-
+func waitForVirtualNetworkReady(ctx context.Context, service client.VirtualNetworkService, id string) (*client.VirtualNetwork, error) {
+	retry := backoff.WithMaxRetries(backoff.NewConstantBackOff(5*time.Second), 30)
+	return backoff.RetryWithData(func() (*client.VirtualNetwork, error) {
+		network, err := service.Get(id)
 		if err != nil {
-			return errors.New(fmt.Sprintf("invalid Virtual Network id: %s", id))
+			return nil, err
 		}
-		if network.State != target {
-			return errors.New(fmt.Sprintf("Waiting for Virtual Network to become ready: %s", id))
+		if network.State != client.VirtualNetworkStateReady {
+			return nil, fmt.Errorf("virtual network state is %s", network.State)
 		}
-		return nil
-	}
-	// Max waiting time is 10 mins
-	backoffConfig := backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second*5), 30)
-
-	err := backoff.Retry(backoffOperation, backoffConfig)
-	if err != nil {
-		return err
-	}
-
-	return nil
+		return network, nil
+	}, backoff.WithContext(retry, ctx))
 }
